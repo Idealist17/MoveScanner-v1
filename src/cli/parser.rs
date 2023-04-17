@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(author="aaa", version="0.01", about="This is a static analysis tool for move smart contracts.", long_about = None)]
+#[command(author="yule liteng", version="0.01", about="This is a static analysis tool for move smart contracts.", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
