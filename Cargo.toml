@@ -11,8 +11,19 @@ move-core-types = { git = "https://github.com/move-language/move", rev = "015150
 move-bytecode-source-map = { git = "https://github.com/move-language/move", rev = "0151500f3fd3d6c2617f4b95f1bd88477d604c80" }
 move-ir-types = { git = "https://github.com/move-language/move", rev = "0151500f3fd3d6c2617f4b95f1bd88477d604c80" }
 move-disassembler =  { git = "https://github.com/move-language/move", rev = "0151500f3fd3d6c2617f4b95f1bd88477d604c80" }
+move-command-line-common = { git = "https://github.com/move-language/move", rev = "0151500f3fd3d6c2617f4b95f1bd88477d604c80" }
+move-compiler = { git = "https://github.com/move-language/move", rev = "0151500f3fd3d6c2617f4b95f1bd88477d604c80" }
+move-model = { git = "https://github.com/move-language/move", rev = "0151500f3fd3d6c2617f4b95f1bd88477d604c80" }
+move-prover-test-utils = { git = "https://github.com/move-language/move", rev = "0151500f3fd3d6c2617f4b95f1bd88477d604c80" }
+move-package = { git = "https://github.com/move-language/move", rev = "0151500f3fd3d6c2617f4b95f1bd88477d604c80" }
+move-stackless-bytecode = { git = "https://github.com/move-language/move", rev = "0151500f3fd3d6c2617f4b95f1bd88477d604c80" }
+move-cli = { git = "https://github.com/move-language/move", rev = "0151500f3fd3d6c2617f4b95f1bd88477d604c80" }
+move-bytecode-utils = { git = "https://github.com/move-language/move", rev = "0151500f3fd3d6c2617f4b95f1bd88477d604c80" }
 itertools = "0.10.5"
 serde_json = "1.0"
 serde = "1.0"
 regex = "1.5"
 clap = { version = "4.1.11", features = ["derive"] }
+codespan = "0.11.1"
+codespan-reporting = { version = "0.11.1", features = ["serde", "serialization"] }
+anyhow = "1.0.52"
