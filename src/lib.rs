@@ -4,3 +4,4 @@
 pub mod cli;
 pub mod move_model;
 pub mod unit_tests;
+mod utils;
