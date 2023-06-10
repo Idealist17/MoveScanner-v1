@@ -16,26 +16,25 @@ use move_stackless_bytecode::{
 use super::generate_bytecode::StacklessBytecodeGenerator;
 
 
-/// Creates a format object for a bytecode in context of a function target.
 pub fn display<'env>(
-    bytecode: &Bytecode,
+    bytecode: &'env Bytecode,
     label_offsets: &'env BTreeMap<Label, CodeOffset>,
-    stacklessbytecodegenerator:&StacklessBytecodeGenerator
+    stbgr:&'env StacklessBytecodeGenerator
 ) -> BytecodeDisplay<'env> {
     BytecodeDisplay {
         bytecode,
         label_offsets,
-        stacklessbytecodegenerator
+        stbgr
     }
 }
 
 pub fn oper_display<'env>(
     oper: &'env Operation,
-    stacklessbytecodegenerator:&'env StacklessBytecodeGenerator<'env>,
+    stbgr:&'env StacklessBytecodeGenerator<'env>,
 ) -> OperationDisplay<'env> {
     OperationDisplay {
         oper,
-        stacklessbytecodegenerator,
+        stbgr,
     }
 }
 
@@ -43,21 +42,21 @@ pub fn oper_display<'env>(
 /// Creates a format object for a borrow node in context of a function target.
 pub fn BorrowNode_display<'env>(
     node: &'env BorrowNode,
-    stacklessbytecodegenerator:&'env StacklessBytecodeGenerator<'env>,
+    stbgr:&'env StacklessBytecodeGenerator<'env>,
 ) -> BorrowNodeDisplay<'env> {
     BorrowNodeDisplay {
         node,
-        stacklessbytecodegenerator,
+        stbgr,
     }
 }
 
 
 pub fn BorrowEdge_display<'env>(
     edge: &'env BorrowEdge, 
-    stacklessbytecodegenerator:&'env StacklessBytecodeGenerator<'env>,
+    stbgr:&'env StacklessBytecodeGenerator<'env>,
 ) -> BorrowEdgeDisplay<'env> {
     BorrowEdgeDisplay { 
-        stacklessbytecodegenerator, 
+        stbgr, 
         edge}
 }
 
@@ -65,7 +64,7 @@ pub fn BorrowEdge_display<'env>(
 pub struct BytecodeDisplay<'env> {
     bytecode: &'env Bytecode,
     label_offsets: &'env BTreeMap<Label, CodeOffset>,
-    stacklessbytecodegenerator:&'env StacklessBytecodeGenerator<'env>
+    stbgr:&'env StacklessBytecodeGenerator<'env>
 }
 
 impl<'env> fmt::Display for BytecodeDisplay<'env> {
@@ -86,7 +85,7 @@ impl<'env> fmt::Display for BytecodeDisplay<'env> {
                     self.fmt_locals(f, dsts, false)?;
                     write!(f, " := ")?;
                 }
-                write!(f, "{}", oper_display(oper,self.stacklessbytecodegenerator))?;
+                write!(f, "{}", oper_display(oper,self.stbgr))?;
                 self.fmt_locals(f, args, true)?;
                 if let Some(AbortAction(label, code)) = aa {
                     write!(
@@ -126,28 +125,31 @@ impl<'env> fmt::Display for BytecodeDisplay<'env> {
                 write!(f, "nop")?;
             }
             SaveMem(_, label, qid) => {
-                let env = self.func_target.global_env();
-                write!(f, "@{} := save_mem({})", label.as_usize(), env.display(qid))?;
+                // TODO
+                // let env = self.func_target.global_env();
+                // write!(f, "@{} := save_mem({})", label.as_usize(), env.display(qid))?;
             }
             SaveSpecVar(_, label, qid) => {
-                let env = self.func_target.global_env();
-                let module_env = env.get_module(qid.module_id);
-                let spec_var = module_env.get_spec_var(qid.id);
-                write!(
-                    f,
-                    "@{} := save_spec_var({}::{})",
-                    label.as_usize(),
-                    module_env.get_name().display(env.symbol_pool()),
-                    spec_var.name.display(env.symbol_pool())
-                )?;
+                // TODO skip it
+                // let env = self.func_target.global_env();
+                // let module_env = env.get_module(qid.module_id);
+                // let spec_var = module_env.get_spec_var(qid.id);
+                // write!(
+                //     f,
+                //     "@{} := save_spec_var({}::{})",
+                //     label.as_usize(),
+                //     module_env.get_name().display(env.symbol_pool()),
+                //     spec_var.name.display(env.symbol_pool())
+                // )?;
             }
             Prop(_, kind, exp) => {
-                let exp_display = exp.display(self.func_target.func_env.module_env.env);
-                match kind {
-                    PropKind::Assume => write!(f, "assume {}", exp_display)?,
-                    PropKind::Assert => write!(f, "assert {}", exp_display)?,
-                    PropKind::Modifies => write!(f, "modifies {}", exp_display)?,
-                }
+                // TODO
+                // let exp_display = exp.display(self.func_target.func_env.module_env.env);
+                // match kind {
+                //     PropKind::Assume => write!(f, "assume {}", exp_display)?,
+                //     PropKind::Assert => write!(f, "assert {}", exp_display)?,
+                //     PropKind::Modifies => write!(f, "modifies {}", exp_display)?,
+                // }
             }
         }
         Ok(())
@@ -192,7 +194,7 @@ impl<'env> BytecodeDisplay<'env> {
 /// A display object for an operation.
 pub struct OperationDisplay<'env> {
     oper: &'env Operation,
-    stacklessbytecodegenerator:&'env StacklessBytecodeGenerator<'env>
+    stbgr:&'env StacklessBytecodeGenerator<'env>
 }
 
 impl<'env> fmt::Display for OperationDisplay<'env> {
@@ -203,11 +205,6 @@ impl<'env> fmt::Display for OperationDisplay<'env> {
             Function(mid, fid, targs)
             | OpaqueCallBegin(mid, fid, targs)
             | OpaqueCallEnd(mid, fid, targs) => {
-                let func_env = self
-                    .func_target
-                    .global_env()
-                    .get_module(*mid)
-                    .into_function(*fid);
                 write!(
                     f,
                     "{}",
@@ -220,11 +217,8 @@ impl<'env> fmt::Display for OperationDisplay<'env> {
                 write!(
                     f,
                     "{}::{}",
-                    func_env
-                        .module_env
-                        .get_name()
-                        .display(func_env.symbol_pool()),
-                    func_env.get_name().display(func_env.symbol_pool()),
+                    self.stbgr.module_data.name.display(&self.stbgr.symbol_pool),
+                    fid.symbol().display(&self.stbgr.symbol_pool),
                 )?;
                 self.fmt_type_args(f, targs)?;
             }
@@ -243,34 +237,34 @@ impl<'env> fmt::Display for OperationDisplay<'env> {
             }
             BorrowField(mid, sid, targs, offset) => {
                 write!(f, "borrow_field<{}>", self.struct_str(*mid, *sid, targs))?;
-                let struct_env = self
-                    .func_target
-                    .global_env()
-                    .get_module(*mid)
-                    .into_struct(*sid);
-                let field_env = struct_env.get_field_by_offset(*offset);
-                write!(
-                    f,
-                    ".{}",
-                    field_env.get_name().display(struct_env.symbol_pool())
-                )?;
+                let struct_data = self.stbgr.module_data.struct_data.get(sid).unwrap();
+                for data in struct_data.field_data.values() {
+                    if data.offset == *offset {
+                        write!(
+                            f,
+                            ".{}",
+                            data.name.display(&self.stbgr.symbol_pool)
+                        )?;
+                        break;
+                    }
+                }
             }
             BorrowGlobal(mid, sid, targs) => {
                 write!(f, "borrow_global<{}>", self.struct_str(*mid, *sid, targs))?;
             }
             GetField(mid, sid, targs, offset) => {
                 write!(f, "get_field<{}>", self.struct_str(*mid, *sid, targs))?;
-                let struct_env = self
-                    .func_target
-                    .global_env()
-                    .get_module(*mid)
-                    .into_struct(*sid);
-                let field_env = struct_env.get_field_by_offset(*offset);
-                write!(
-                    f,
-                    ".{}",
-                    field_env.get_name().display(struct_env.symbol_pool())
-                )?;
+                let struct_data = self.stbgr.module_data.struct_data.get(sid).unwrap();
+                for data in struct_data.field_data.values() {
+                    if data.offset == *offset {
+                        write!(
+                            f,
+                            ".{}",
+                            data.name.display(&self.stbgr.symbol_pool)
+                        )?;
+                        break;
+                    }
+                }
             }
             GetGlobal(mid, sid, targs) => {
                 write!(f, "get_global<{}>", self.struct_str(*mid, *sid, targs))?;
@@ -317,19 +311,24 @@ impl<'env> fmt::Display for OperationDisplay<'env> {
             UnpackRefDeep => {
                 write!(f, "unpack_ref_deep")?;
             }
-            WriteBack(node, edge) => write!(
-                f,
-                "write_back[{}{}]",
-                node.display(self.func_target),
-                edge.display(self.func_target.global_env())
-            )?,
-            IsParent(node, edge) => write!(
-                f,
-                "is_parent[{}{}]",
-                node.display(self.func_target),
-                edge.display(self.func_target.global_env())
-            )?,
-
+            WriteBack(node, edge) => {
+                // TODO
+                // write!(
+                //     f,
+                //     "write_back[{}{}]",
+                //     node.display(self.func_target),
+                //     edge.display(self.func_target.global_env())
+                // )?;
+            }
+            IsParent(node, edge) => {
+                // TODO 
+                // write!(
+                //     f,
+                //     "is_parent[{}{}]",
+                //     node.display(self.func_target),
+                //     edge.display(self.func_target.global_env())
+                // )?;
+            }
             Havoc(kind) => {
                 write!(
                     f,
@@ -375,23 +374,25 @@ impl<'env> fmt::Display for OperationDisplay<'env> {
 
             // Debugging
             TraceLocal(l) => {
-                let name = self.func_target.get_local_name(*l);
-                write!(
-                    f,
-                    "trace_local[{}]",
-                    name.display(self.func_target.symbol_pool())
-                )?
+                // TODO
+                // let name = self.func_target.get_local_name(*l);
+                // write!(
+                //     f,
+                //     "trace_local[{}]",
+                //     name.display(self.stbgr.symbol_pool())
+                // )?
             }
             TraceAbort => write!(f, "trace_abort")?,
             TraceReturn(r) => write!(f, "trace_return[{}]", r)?,
             TraceExp(kind, node_id) => {
-                let loc = self.func_target.global_env().get_node_loc(*node_id);
-                write!(
-                    f,
-                    "trace_exp[{}, {}]",
-                    kind,
-                    loc.display(self.func_target.global_env())
-                )?
+                // TODO
+                // let loc = self.func_target.global_env().get_node_loc(*node_id);
+                // write!(
+                //     f,
+                //     "trace_exp[{}, {}]",
+                //     kind,
+                //     loc.display(self.func_target.global_env())
+                // )?
             }
             EmitEvent => write!(f, "emit_event")?,
             EventStoreDiverge => write!(f, "event_store_diverge")?,
@@ -404,62 +405,39 @@ impl<'env> fmt::Display for OperationDisplay<'env> {
 impl<'env> OperationDisplay<'env> {
     fn fmt_type_args(&self, f: &mut Formatter<'_>, targs: &[Type]) -> fmt::Result {
         if !targs.is_empty() {
-            let tctx = TypeDisplayContext::WithEnv {
-                env: self.func_target.global_env(),
-                type_param_names: None,
-            };
-            write!(f, "<")?;
-            for (i, ty) in targs.iter().enumerate() {
-                if i > 0 {
-                    write!(f, ", ")?;
-                }
-                write!(f, "{}", ty.display(&tctx))?;
-            }
-            write!(f, ">")?;
+            // TODO
+            // let tctx = TypeDisplayContext::WithEnv {
+            //     env: self.func_target.global_env(),
+            //     type_param_names: None,
+            // };
+            // write!(f, "<")?;
+            // for (i, ty) in targs.iter().enumerate() {
+            //     if i > 0 {
+            //         write!(f, ", ")?;
+            //     }
+            //     write!(f, "{}", ty.display(&tctx))?;
+            // }
+            // write!(f, ">")?;
         }
         Ok(())
     }
 
     fn struct_str(&self, mid: ModuleId, sid: StructId, targs: &[Type]) -> String {
-        let ty = Type::Struct(mid, sid, targs.to_vec());
-        let tctx = TypeDisplayContext::WithEnv {
-            env: self.func_target.global_env(),
-            type_param_names: None,
-        };
-        format!("{}", ty.display(&tctx))
-    }
-}
-
-impl fmt::Display for Constant {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        use Constant::*;
-        match self {
-            Bool(x) => write!(f, "{}", x)?,
-            U8(x) => write!(f, "{}", x)?,
-            U64(x) => write!(f, "{}", x)?,
-            U128(x) => write!(f, "{}", x)?,
-            U256(x) => write!(f, "{}", x)?,
-            Address(x) => write!(f, "0x{}", x.to_str_radix(16))?,
-            ByteArray(x) => write!(f, "{:?}", x)?,
-            AddressArray(x) => write!(
-                f,
-                "{:?}",
-                x.iter()
-                    .map(|v| format!("0x{}", v.to_str_radix(16)))
-                    .collect_vec()
-            )?,
-            Vector(x) => write!(f, "{:?}", x.iter().map(|v| format!("{}", v)).collect_vec())?,
-            U16(x) => write!(f, "{}", x)?,
-            U32(x) => write!(f, "{}", x)?,
-        }
-        Ok(())
+        // TODO
+        // let ty = Type::Struct(mid, sid, targs.to_vec());
+        // let tctx = TypeDisplayContext::WithEnv {
+        //     env: self.func_target.global_env(),
+        //     type_param_names: None,
+        // };
+        // format!("{}", ty.display(&tctx))
+        "TODO struct_str".to_string()
     }
 }
 
 /// A display object for a borrow node.
 pub struct BorrowNodeDisplay<'env> {
     node: &'env BorrowNode,
-    stacklessbytecodegenerator:&'env StacklessBytecodeGenerator<'env>
+    stbgr:&'env StacklessBytecodeGenerator<'env>
 }
 
 impl<'env> fmt::Display for BorrowNodeDisplay<'env> {
@@ -467,12 +445,13 @@ impl<'env> fmt::Display for BorrowNodeDisplay<'env> {
         use BorrowNode::*;
         match self.node {
             GlobalRoot(s) => {
-                let ty = Type::Struct(s.module_id, s.id, s.inst.to_owned());
-                let tctx = TypeDisplayContext::WithEnv {
-                    env: self.func_target.global_env(),
-                    type_param_names: None,
-                };
-                write!(f, "{}", ty.display(&tctx))?;
+                // TODO
+                // let ty = Type::Struct(s.module_id, s.id, s.inst.to_owned());
+                // let tctx = TypeDisplayContext::WithEnv {
+                //     env: self.func_target.global_env(),
+                //     type_param_names: None,
+                // };
+                // write!(f, "{}", ty.display(&tctx))?;
             }
             LocalRoot(idx) => {
                 write!(f, "LocalRoot($t{})", idx)?;
@@ -490,41 +469,43 @@ impl<'env> fmt::Display for BorrowNodeDisplay<'env> {
 
 
 pub struct BorrowEdgeDisplay<'a> {
-    stacklessbytecodegenerator:&'a StacklessBytecodeGenerator<'a>,
+    stbgr:&'a StacklessBytecodeGenerator<'a>,
     edge: &'a BorrowEdge,
 }
 
 impl<'a> std::fmt::Display for BorrowEdgeDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use BorrowEdge::*;
-        let tctx = TypeDisplayContext::WithEnv {
-            env: self.env,
-            type_param_names: None,
-        };
-        match self.edge {
-            Field(qid, field) => {
-                let struct_env = self.env.get_struct(qid.to_qualified_id());
-                let field_env = struct_env.get_field_by_offset(*field);
-                let field_type = field_env.get_type().instantiate(&qid.inst);
-                write!(
-                    f,
-                    ".{} ({})",
-                    field_env.get_name().display(self.env.symbol_pool()),
-                    field_type.display(&tctx),
-                )
-            }
-            Index(_) => write!(f, "[]"),
-            Direct => write!(f, "@"),
-            Hyper(es) => {
-                write!(
-                    f,
-                    "{}",
-                    es.iter()
-                        .map(|e| format!("{}", e.display(self.env)))
-                        .join("/")
-                )
-            }
-        }
+        // TODO
+        // let tctx = TypeDisplayContext::WithEnv {
+        //     env: self.env,
+        //     type_param_names: None,
+        // };
+        // match self.edge {
+        //     Field(qid, field) => {
+        //         let struct_env = self.env.get_struct(qid.to_qualified_id());
+        //         let field_env = struct_env.get_field_by_offset(*field);
+        //         let field_type = field_env.get_type().instantiate(&qid.inst);
+        //         write!(
+        //             f,
+        //             ".{} ({})",
+        //             field_env.get_name().display(self.env.symbol_pool()),
+        //             field_type.display(&tctx),
+        //         )
+        //     }
+        //     Index(_) => write!(f, "[]"),
+        //     Direct => write!(f, "@"),
+        //     Hyper(es) => {
+        //         write!(
+        //             f,
+        //             "{}",
+        //             es.iter()
+        //                 .map(|e| format!("{}", e.display(self.env)))
+        //                 .join("/")
+        //         )
+        //     }
+        // }
+        Ok(())
     }
 }
 

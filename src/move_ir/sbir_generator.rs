@@ -179,12 +179,12 @@ impl MoveScanner {
 
             let bytecodes = target.get_bytecode();
             let label_offsets = Bytecode::label_offsets(bytecodes);
-            // for (offset, code) in bytecodes.iter().enumerate() {
-            //     println!(
-            //         "{}",
-            //         format!("{:>3}: {}", offset, code.display(&target, &label_offsets))
-            //     );
-            // }
+            for (offset, code) in bytecodes.iter().enumerate() {
+                println!(
+                    "{}",
+                    format!("{:>3}: {}", offset, code.display(&target, &label_offsets))
+                );
+            }
             let function = Function {
                 name: func_name,
                 module_name,
