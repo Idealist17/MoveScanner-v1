@@ -8,7 +8,7 @@ use crate::move_ir::bytecode_display;
 
 #[test]
 fn test_generate_bytecode() {
-    let filename = PathBuf::from_str("/Users/lteng/Movebit/MoveScanner/testdata/examples_mv/aptos/witness.mv").unwrap();
+    let filename = PathBuf::from_str("/Users/lteng/Movebit/AptosProjects/aptos_werewolfandwitch/build/wolf_witch/bytecode_modules/utils.mv").unwrap();
     let cm = compile_module(filename);
     for fd in &cm.function_defs { 
         let mut bg = StacklessBytecodeGenerator::new(&cm, fd);

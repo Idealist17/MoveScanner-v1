@@ -117,6 +117,16 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             reverse_struct_table.insert((module_id, struct_id), qsymbol);
         }
 
+        for handle in cm.struct_handles().iter() {
+            let addr = addr_to_big_uint(id.address());
+            let module_name = ModuleName::new(addr, symbol_pool.make(id.name().as_str()));
+            let name = cm.identifier_at(handle.name);
+            let symbol = symbol_pool.make(name.as_str());
+            let struct_id = StructId::new(symbol);
+            let qsymbol = QualifiedSymbol{module_name, symbol};
+            reverse_struct_table.insert((module_id, struct_id), qsymbol);
+        }
+
         StacklessBytecodeGenerator {
             module: cm,
             module_data: module_data,

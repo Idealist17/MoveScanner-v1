@@ -1,123 +1,5 @@
-
-[variant baseline]
-fun precision::precision_loss() {
-     var $t0|$t0: u8
-     var $t1|$t1: u8
-     var $t2: u8
-     var $t3: u8
-     var $t4: u8
-     var $t5: u8
-     var $t6: u8
-     var $t7: u8
-     var $t8: u8
-     var $t9: u8
-     var $t10: u8
-     var $t11: u8
-     var $t12: u8
-     var $t13: u8
-     var $t14: bool
-     var $t15: u64
-  0: $t2 := 5
-  1: $t0 := $t2
-  2: $t3 := 3
-  3: $t1 := $t3
-  4: $t4 := copy($t0)
-  5: $t5 := copy($t1)
-  6: $t6 := /($t4, $t5)
-  7: $t7 := 2
-  8: $t8 := *($t6, $t7)
-  9: $t9 := move($t0)
- 10: $t10 := 2
- 11: $t11 := *($t9, $t10)
- 12: $t12 := move($t1)
- 13: $t13 := /($t11, $t12)
- 14: $t14 := ==($t8, $t13)
- 15: if ($t14) goto 16 else goto 18
- 16: label L1
- 17: goto 21
- 18: label L0
- 19: $t15 := 1
- 20: abort($t15)
- 21: label L2
- 22: return ()
-}
-
-
-[variant baseline]
-fun unchecked_return::fun1($t0|$t0: u8, $t1|$t1: u8): u8 {
-     var $t2: u8
-     var $t3: u8
-     var $t4: u8
-  0: $t2 := move($t0)
-  1: $t3 := move($t1)
-  2: $t4 := +($t2, $t3)
-  3: return $t4
-}
-
-
-[variant baseline]
-fun unchecked_return::fun2() {
-     var $t0: u8
-     var $t1: u8
-     var $t2: u8
-  0: $t0 := 2
-  1: $t1 := 3
-  2: $t2 := unchecked_return::fun1($t0, $t1)
-  3: destroy($t2)
-  4: return ()
-}
-
-
-[variant baseline]
-public fun access_control::emit_event<#0, #1>($t0|$t0: u64) {
-     var $t1|$t1: &mut access_control::EventStore
-     var $t2: address
-     var $t3: &mut access_control::EventStore
-     var $t4: u64
-     var $t5: u64
-     var $t6: bool
-     var $t7: &mut access_control::EventStore
-     var $t8: u64
-     var $t9: &mut access_control::EventStore
-     var $t10: &mut event::EventHandle<access_control::Event>
-     var $t11: u64
-     var $t12: access_control::Event
-  0: $t2 := 0x99
-  1: $t3 := borrow_global<access_control::EventStore>($t2)
-  2: $t1 := $t3
-  3: $t4 := copy($t0)
-  4: $t5 := 100
-  5: $t6 := <=($t4, $t5)
-  6: if ($t6) goto 7 else goto 9
-  7: label L1
-  8: goto 14
-  9: label L0
- 10: $t7 := move($t1)
- 11: destroy($t7)
- 12: $t8 := 8
- 13: abort($t8)
- 14: label L2
- 15: $t9 := move($t1)
- 16: $t10 := borrow_field<access_control::EventStore>.events($t9)
- 17: $t11 := move($t0)
- 18: $t12 := pack access_control::Event($t11)
- 19: event::emit_event<access_control::Event>($t10, $t12)
- 20: return ()
-}
-
-
-[variant baseline]
-public fun infinite_loop2::f1($t0|$t0: u64): u64 {
-     var $t1: u64
-  0: $t1 := move($t0)
-  1: return $t1
-}
-
-
-[variant baseline]
-public fun infinite_loop2::infinite_loop($t0|$t0: u64) {
-     var $t1|$t1: u64
-     var $t2: u64
+public fun utils::average($t0|$t0: u64, $t1|$t1: u64): u64 {
+     var $t2|$t2: u64
      var $t3: u64
      var $t4: u64
      var $t5: bool
@@ -125,394 +7,342 @@ public fun infinite_loop2::infinite_loop($t0|$t0: u64) {
      var $t7: u64
      var $t8: u64
      var $t9: u64
-  0: $t2 := 1
-  1: destroy($t2)
-  2: $t3 := move($t0)
-  3: $t4 := 1000
-  4: $t5 := ==($t3, $t4)
-  5: if ($t5) goto 6 else goto 10
-  6: label L1
-  7: $t6 := 2
-  8: $t1 := $t6
-  9: goto 14
- 10: label L0
- 11: $t7 := 3
- 12: $t1 := $t7
- 13: goto 14
- 14: label L2
- 15: $t8 := move($t1)
- 16: $t9 := infinite_loop2::f1($t8)
- 17: destroy($t9)
- 18: return ()
+     var $t10: u64
+     var $t11: u64
+     var $t12: u64
+     var $t13: u64
+     var $t14: u64
+     var $t15: u64
+     var $t16: u64
+     var $t17: u64
+     var $t18: u64
+     var $t19: u64
+     var $t20: u64
+  0: $t3 := copy($t0)
+  1: $t4 := copy($t1)
+  2: $t5 := <($t3, $t4)
+  3: if ($t5) goto 4 else goto 14
+  4: label L1
+  5: $t6 := copy($t0)
+  6: $t7 := move($t1)
+  7: $t8 := move($t0)
+  8: $t9 := -($t7, $t8)
+  9: $t10 := 2
+ 10: $t11 := /($t9, $t10)
+ 11: $t12 := +($t6, $t11)
+ 12: $t2 := $t12
+ 13: goto 24
+ 14: label L0
+ 15: $t13 := copy($t1)
+ 16: $t14 := move($t0)
+ 17: $t15 := move($t1)
+ 18: $t16 := -($t14, $t15)
+ 19: $t17 := 2
+ 20: $t18 := /($t16, $t17)
+ 21: $t19 := +($t13, $t18)
+ 22: $t2 := $t19
+ 23: goto 24
+ 24: label L2
+ 25: $t20 := move($t2)
+ 26: return $t20
 }
 
-
-[variant baseline]
-fun witness_user::test() {
-     var $t0|$t0: witness::Witness
-     var $t1|$t1: witness::Witness
-     var $t2: witness::Witness
-     var $t3: witness::Witness
-     var $t4: witness::Witness
-     var $t5: witness::Witness
-  0: $t2 := witness::get_witness()
-  1: $t1 := $t2
-  2: $t3 := copy($t1)
-  3: $t0 := $t3
-  4: $t4 := move($t1)
-  5: witness::access_via_witness($t4)
-  6: $t5 := move($t0)
-  7: witness::access_via_witness($t5)
-  8: return ()
-}
-
-
-[variant baseline]
-fun timestamp_dependency::timestamp_dependency($t0|$t0: u64): bool {
-     var $t1|$t1: bool
-     var $t2|$t2: u64
-     var $t3: u64
-     var $t4: u64
-     var $t5: u64
-     var $t6: bool
-     var $t7: bool
-     var $t8: bool
-     var $t9: bool
-  0: $t3 := timestamp::now_seconds()
-  1: $t2 := $t3
-  2: $t4 := move($t0)
-  3: $t5 := move($t2)
-  4: $t6 := ==($t4, $t5)
-  5: if ($t6) goto 6 else goto 10
-  6: label L1
-  7: $t7 := true
-  8: $t1 := $t7
-  9: goto 14
- 10: label L0
- 11: $t8 := false
- 12: $t1 := $t8
- 13: goto 14
- 14: label L2
- 15: $t9 := move($t1)
- 16: return $t9
-}
-
-
-[variant baseline]
-fun infinite_loop::infinite_loop() {
-     var $t0|$t0: u64
-     var $t1|$t1: u64
-     var $t2: u64
-     var $t3: u64
-     var $t4: u64
-     var $t5: u64
-     var $t6: bool
-     var $t7: u64
-     var $t8: u64
-     var $t9: u64
-  0: $t2 := 1
-  1: $t0 := $t2
-  2: $t3 := 1
-  3: $t1 := $t3
-  4: goto 5
-  5: label L3
-  6: $t4 := copy($t1)
-  7: $t5 := 255
-  8: $t6 := <($t4, $t5)
-  9: if ($t6) goto 10 else goto 18
- 10: label L1
- 11: goto 12
- 12: label L2
- 13: $t7 := move($t0)
- 14: $t8 := copy($t1)
- 15: $t9 := +($t7, $t8)
- 16: $t0 := $t9
- 17: goto 5
- 18: label L0
- 19: return ()
-}
-
-
-[variant baseline]
-fun overflow::overflow(): u8 {
-     var $t0|$t0: u8
-     var $t1|$t1: u8
-     var $t2: u8
-     var $t3: u8
-     var $t4: u8
-     var $t5: u8
-     var $t6: u8
-     var $t7: u8
-     var $t8: u8
-     var $t9: u8
-     var $t10: u8
-  0: $t2 := 255
-  1: $t0 := $t2
-  2: $t3 := copy($t0)
-  3: $t4 := 2
-  4: $t5 := <<($t3, $t4)
-  5: $t1 := $t5
-  6: $t6 := move($t0)
-  7: $t7 := move($t1)
-  8: $t8 := 2
-  9: $t9 := <<($t7, $t8)
- 10: $t10 := +($t6, $t9)
- 11: return $t10
-}
-
-
-[variant baseline]
-public fun witness::access_via_witness($t0|$t0: witness::Witness) {
-     var $t1|$t1: vector<u64>
-     var $t2: witness::Witness
-     var $t3: bool
-     var $t4: vector<u64>
-     var $t5: &mut vector<u64>
-     var $t6: u64
-  0: $t2 := move($t0)
-  1: $t3 := unpack witness::Witness($t2)
-  2: destroy($t3)
-  3: $t4 := vector::empty<u64>()
-  4: $t1 := $t4
-  5: $t5 := borrow_local($t1)
-  6: $t6 := 5
-  7: vector::push_back<u64>($t5, $t6)
-  8: return ()
-}
-
-
-[variant baseline]
-public fun witness::get_witness(): witness::Witness {
-     var $t0: bool
-     var $t1: witness::Witness
-  0: $t0 := false
-  1: $t1 := pack witness::Witness($t0)
-  2: return $t1
-}
-
-
-[variant baseline]
-public fun DemoCoin::burn($t0|$t0: &signer, $t1|$t1: u64) {
-     var $t2|$t2: &coin::BurnCapability<DemoCoin::APD>
-     var $t3|$t3: coin::Coin<DemoCoin::APD>
-     var $t4: &signer
-     var $t5: u64
-     var $t6: coin::Coin<DemoCoin::APD>
-     var $t7: address
-     var $t8: &DemoCoin::CoinCapabilities
-     var $t9: &coin::BurnCapability<DemoCoin::APD>
-     var $t10: coin::Coin<DemoCoin::APD>
-     var $t11: &coin::BurnCapability<DemoCoin::APD>
-  0: $t4 := move($t0)
-  1: $t5 := move($t1)
-  2: $t6 := coin::withdraw<DemoCoin::APD>($t4, $t5)
-  3: $t3 := $t6
-  4: $t7 := 0x123
-  5: $t8 := borrow_global<DemoCoin::CoinCapabilities>($t7)
-  6: $t9 := borrow_field<DemoCoin::CoinCapabilities>.burn_cap($t8)
-  7: $t2 := $t9
-  8: $t10 := move($t3)
-  9: $t11 := move($t2)
- 10: coin::burn<DemoCoin::APD>($t10, $t11)
- 11: return ()
-}
-
-
-[variant baseline]
-public fun DemoCoin::freeze_user($t0|$t0: &signer, $t1|$t1: address) {
-     var $t2|$t2: address
-     var $t3|$t3: &coin::FreezeCapability<DemoCoin::APD>
-     var $t4: &signer
-     var $t5: address
-     var $t6: address
-     var $t7: address
-     var $t8: address
-     var $t9: &DemoCoin::CoinCapabilities
-     var $t10: &coin::FreezeCapability<DemoCoin::APD>
-     var $t11: address
-     var $t12: &coin::FreezeCapability<DemoCoin::APD>
-  0: $t4 := move($t0)
-  1: $t5 := signer::address_of($t4)
-  2: $t2 := $t5
-  3: $t6 := copy($t2)
-  4: DemoCoin::is_admin($t6)
-  5: $t7 := move($t2)
-  6: DemoCoin::have_coin_capabilities($t7)
-  7: $t8 := 0x123
-  8: $t9 := borrow_global<DemoCoin::CoinCapabilities>($t8)
-  9: $t10 := borrow_field<DemoCoin::CoinCapabilities>.freeze_cap($t9)
- 10: $t3 := $t10
- 11: $t11 := move($t1)
- 12: $t12 := move($t3)
- 13: coin::freeze_coin_store<DemoCoin::APD>($t11, $t12)
- 14: return ()
-}
-
-
-[variant baseline]
-public fun DemoCoin::have_coin_capabilities($t0|$t0: address) {
-     var $t1: address
-     var $t2: bool
-     var $t3: u64
-  0: $t1 := move($t0)
-  1: $t2 := exists<DemoCoin::CoinCapabilities>($t1)
-  2: if ($t2) goto 3 else goto 5
-  3: label L1
-  4: goto 8
-  5: label L0
-  6: $t3 := 2
-  7: abort($t3)
-  8: label L2
-  9: return ()
-}
-
-
-[variant baseline]
-fun DemoCoin::init_module($t0|$t0: &signer) {
-     var $t1|$t1: address
-     var $t2|$t2: coin::BurnCapability<DemoCoin::APD>
-     var $t3|$t3: coin::Coin<DemoCoin::APD>
-     var $t4|$t4: coin::FreezeCapability<DemoCoin::APD>
-     var $t5|$t5: coin::MintCapability<DemoCoin::APD>
-     var $t6: &signer
-     var $t7: address
-     var $t8: address
-     var $t9: address
-     var $t10: &signer
+public fun utils::random($t0|$t0: address, $t1|$t1: u64): u64 {
+     var $t2|$t2: vector<u8>
+     var $t3|$t3: u64
+     var $t4|$t4: u64
+     var $t5|$t5: vector<u8>
+     var $t6|$t6: vector<u8>
+     var $t7|$t7: vector<u8>
+     var $t8|$t8: &u8
+     var $t9|$t9: vector<u8>
+     var $t10: u64
      var $t11: vector<u8>
-     var $t12: string::String
+     var $t12: &address
      var $t13: vector<u8>
-     var $t14: string::String
-     var $t15: u8
-     var $t16: bool
-     var $t17: coin::BurnCapability<DemoCoin::APD>
-     var $t18: coin::FreezeCapability<DemoCoin::APD>
-     var $t19: coin::MintCapability<DemoCoin::APD>
-     var $t20: &signer
-     var $t21: u64
-     var $t22: &coin::MintCapability<DemoCoin::APD>
-     var $t23: coin::Coin<DemoCoin::APD>
-     var $t24: address
-     var $t25: coin::Coin<DemoCoin::APD>
-     var $t26: coin::MintCapability<DemoCoin::APD>
-     var $t27: &signer
-     var $t28: coin::BurnCapability<DemoCoin::APD>
-     var $t29: coin::FreezeCapability<DemoCoin::APD>
-     var $t30: DemoCoin::CoinCapabilities
-  0: $t6 := copy($t0)
-  1: $t7 := signer::address_of($t6)
-  2: $t1 := $t7
-  3: $t8 := copy($t1)
-  4: DemoCoin::is_admin($t8)
-  5: $t9 := copy($t1)
-  6: DemoCoin::not_have_coin_capabilities($t9)
-  7: $t10 := copy($t0)
-  8: $t11 := [65, 112, 116, 111, 112, 97, 100, 32, 67, 111, 105, 110]
-  9: $t12 := string::utf8($t11)
- 10: $t13 := [65, 80, 68]
- 11: $t14 := string::utf8($t13)
- 12: $t15 := 8
- 13: $t16 := true
- 14: ($t17, $t18, $t19) := coin::initialize<DemoCoin::APD>($t10, $t12, $t14, $t15, $t16)
- 15: $t5 := $t19
- 16: $t4 := $t18
- 17: $t2 := $t17
- 18: $t20 := copy($t0)
- 19: coin::register<DemoCoin::APD>($t20)
- 20: $t21 := 10000000000000000
- 21: $t22 := borrow_local($t5)
- 22: $t23 := coin::mint<DemoCoin::APD>($t21, $t22)
- 23: $t3 := $t23
- 24: $t24 := move($t1)
- 25: $t25 := move($t3)
- 26: coin::deposit<DemoCoin::APD>($t24, $t25)
- 27: $t26 := move($t5)
- 28: coin::destroy_mint_cap<DemoCoin::APD>($t26)
- 29: $t27 := move($t0)
- 30: $t28 := move($t2)
- 31: $t29 := move($t4)
- 32: $t30 := pack DemoCoin::CoinCapabilities($t28, $t29)
- 33: move_to<DemoCoin::CoinCapabilities>($t30, $t27)
- 34: return ()
+     var $t14: &u64
+     var $t15: vector<u8>
+     var $t16: &mut vector<u8>
+     var $t17: vector<u8>
+     var $t18: &mut vector<u8>
+     var $t19: vector<u8>
+     var $t20: vector<u8>
+     var $t21: vector<u8>
+     var $t22: vector<u8>
+     var $t23: u64
+     var $t24: u64
+     var $t25: u64
+     var $t26: bool
+     var $t27: &vector<u8>
+     var $t28: u64
+     var $t29: &u8
+     var $t30: &mut vector<u8>
+     var $t31: &u8
+     var $t32: u8
+     var $t33: vector<u8>
+     var $t34: &mut vector<u8>
+     var $t35: u64
+     var $t36: u64
+     var $t37: u64
+     var $t38: vector<u8>
+     var $t39: u64
+     var $t40: u64
+     var $t41: u64
+  0: $t10 := utils::now_microseconds()
+  1: $t4 := $t10
+  2: $t11 := utils::get_script_hash()
+  3: $t5 := $t11
+  4: $t12 := borrow_local($t0)
+  5: $t13 := utils::to_bytes<address>fmt_type_args($t12)
+  6: $t7 := $t13
+  7: $t14 := borrow_local($t4)
+  8: $t15 := utils::to_bytes<u64>fmt_type_args($t14)
+  9: $t9 := $t15
+ 10: $t16 := borrow_local($t7)
+ 11: $t17 := move($t5)
+ 12: utils::append<u8>fmt_type_args($t16, $t17)
+ 13: $t18 := borrow_local($t7)
+ 14: $t19 := move($t9)
+ 15: utils::append<u8>fmt_type_args($t18, $t19)
+ 16: $t20 := move($t7)
+ 17: $t21 := utils::sha2_256($t20)
+ 18: $t6 := $t21
+ 19: $t22 := []
+ 20: $t2 := $t22
+ 21: $t23 := 24
+ 22: $t3 := $t23
+ 23: goto 24
+ 24: label L3
+ 25: $t24 := copy($t3)
+ 26: $t25 := 32
+ 27: $t26 := <($t24, $t25)
+ 28: if ($t26) goto 29 else goto 48
+ 29: label L1
+ 30: goto 31
+ 31: label L2
+ 32: $t27 := borrow_local($t6)
+ 33: $t28 := copy($t3)
+ 34: $t29 := utils::borrow<u8>fmt_type_args($t27, $t28)
+ 35: $t8 := $t29
+ 36: $t30 := borrow_local($t2)
+ 37: $t31 := move($t8)
+ 38: $t32 := read_ref($t31)
+ 39: $t33 := utils::empty<u8>fmt_type_args()
+ 40: $t34 := borrow_local($t33)
+ 41: utils::push_back<u8>fmt_type_args($t34, $t32)
+ 42: utils::append<u8>fmt_type_args($t30, $t33)
+ 43: $t35 := move($t3)
+ 44: $t36 := 1
+ 45: $t37 := +($t35, $t36)
+ 46: $t3 := $t37
+ 47: goto 24
+ 48: label L0
+ 49: $t38 := move($t2)
+ 50: $t39 := utils::to_u64($t38)
+ 51: $t40 := move($t1)
+ 52: $t41 := %($t39, $t40)
+ 53: return $t41
 }
 
+public fun utils::random_with_nonce($t0|$t0: address, $t1|$t1: u64, $t2|$t2: u64): u64 {
+     var $t3|$t3: vector<u8>
+     var $t4|$t4: u64
+     var $t5|$t5: u64
+     var $t6|$t6: vector<u8>
+     var $t7|$t7: vector<u8>
+     var $t8|$t8: vector<u8>
+     var $t9|$t9: &u8
+     var $t10|$t10: vector<u8>
+     var $t11|$t11: vector<u8>
+     var $t12: u64
+     var $t13: vector<u8>
+     var $t14: &address
+     var $t15: vector<u8>
+     var $t16: &u64
+     var $t17: vector<u8>
+     var $t18: &u64
+     var $t19: vector<u8>
+     var $t20: &mut vector<u8>
+     var $t21: vector<u8>
+     var $t22: &mut vector<u8>
+     var $t23: vector<u8>
+     var $t24: &mut vector<u8>
+     var $t25: vector<u8>
+     var $t26: vector<u8>
+     var $t27: vector<u8>
+     var $t28: vector<u8>
+     var $t29: u64
+     var $t30: u64
+     var $t31: u64
+     var $t32: bool
+     var $t33: &vector<u8>
+     var $t34: u64
+     var $t35: &u8
+     var $t36: &mut vector<u8>
+     var $t37: &u8
+     var $t38: u8
+     var $t39: vector<u8>
+     var $t40: &mut vector<u8>
+     var $t41: u64
+     var $t42: u64
+     var $t43: u64
+     var $t44: vector<u8>
+     var $t45: u64
+     var $t46: u64
+     var $t47: u64
+  0: $t12 := utils::now_microseconds()
+  1: $t5 := $t12
+  2: $t13 := utils::get_script_hash()
+  3: $t6 := $t13
+  4: $t14 := borrow_local($t0)
+  5: $t15 := utils::to_bytes<address>fmt_type_args($t14)
+  6: $t8 := $t15
+  7: $t16 := borrow_local($t5)
+  8: $t17 := utils::to_bytes<u64>fmt_type_args($t16)
+  9: $t11 := $t17
+ 10: $t18 := borrow_local($t2)
+ 11: $t19 := utils::to_bytes<u64>fmt_type_args($t18)
+ 12: $t10 := $t19
+ 13: $t20 := borrow_local($t8)
+ 14: $t21 := move($t6)
+ 15: utils::append<u8>fmt_type_args($t20, $t21)
+ 16: $t22 := borrow_local($t8)
+ 17: $t23 := move($t11)
+ 18: utils::append<u8>fmt_type_args($t22, $t23)
+ 19: $t24 := borrow_local($t8)
+ 20: $t25 := move($t10)
+ 21: utils::append<u8>fmt_type_args($t24, $t25)
+ 22: $t26 := move($t8)
+ 23: $t27 := utils::sha2_256($t26)
+ 24: $t7 := $t27
+ 25: $t28 := []
+ 26: $t3 := $t28
+ 27: $t29 := 24
+ 28: $t4 := $t29
+ 29: goto 30
+ 30: label L3
+ 31: $t30 := copy($t4)
+ 32: $t31 := 32
+ 33: $t32 := <($t30, $t31)
+ 34: if ($t32) goto 35 else goto 54
+ 35: label L1
+ 36: goto 37
+ 37: label L2
+ 38: $t33 := borrow_local($t7)
+ 39: $t34 := copy($t4)
+ 40: $t35 := utils::borrow<u8>fmt_type_args($t33, $t34)
+ 41: $t9 := $t35
+ 42: $t36 := borrow_local($t3)
+ 43: $t37 := move($t9)
+ 44: $t38 := read_ref($t37)
+ 45: $t39 := utils::empty<u8>fmt_type_args()
+ 46: $t40 := borrow_local($t39)
+ 47: utils::push_back<u8>fmt_type_args($t40, $t38)
+ 48: utils::append<u8>fmt_type_args($t36, $t39)
+ 49: $t41 := move($t4)
+ 50: $t42 := 1
+ 51: $t43 := +($t41, $t42)
+ 52: $t4 := $t43
+ 53: goto 30
+ 54: label L0
+ 55: $t44 := move($t3)
+ 56: $t45 := utils::to_u64($t44)
+ 57: $t46 := move($t1)
+ 58: $t47 := %($t45, $t46)
+ 59: return $t47
+}
 
-[variant baseline]
-public fun DemoCoin::is_admin($t0|$t0: address) {
-     var $t1: address
-     var $t2: address
-     var $t3: bool
-     var $t4: u64
-  0: $t1 := move($t0)
-  1: $t2 := 0x123
-  2: $t3 := ==($t1, $t2)
-  3: if ($t3) goto 4 else goto 6
+public fun utils::to_string($t0|$t0: u128): ??unknown?? {
+     var $t1|$t1: vector<u8>
+     var $t2: u128
+     var $t3: u128
+     var $t4: bool
+     var $t5: vector<u8>
+     var $t6: ??unknown??
+     var $t7: vector<u8>
+     var $t8: u128
+     var $t9: u128
+     var $t10: bool
+     var $t11: &mut vector<u8>
+     var $t12: u128
+     var $t13: u128
+     var $t14: u128
+     var $t15: u128
+     var $t16: u128
+     var $t17: u8
+     var $t18: u128
+     var $t19: u128
+     var $t20: u128
+     var $t21: &mut vector<u8>
+     var $t22: vector<u8>
+     var $t23: ??unknown??
+  0: $t2 := copy($t0)
+  1: $t3 := 0
+  2: $t4 := ==($t2, $t3)
+  3: if ($t4) goto 4 else goto 8
   4: label L1
-  5: goto 9
-  6: label L0
-  7: $t4 := 0
-  8: abort($t4)
-  9: label L2
- 10: return ()
+  5: $t5 := [48]
+  6: $t6 := utils::utf8($t5)
+  7: return $t6
+  8: label L0
+  9: $t7 := utils::empty<u8>fmt_type_args()
+ 10: $t1 := $t7
+ 11: goto 12
+ 12: label L5
+ 13: $t8 := copy($t0)
+ 14: $t9 := 0
+ 15: $t10 := !=($t8, $t9)
+ 16: if ($t10) goto 17 else goto 33
+ 17: label L3
+ 18: goto 19
+ 19: label L4
+ 20: $t11 := borrow_local($t1)
+ 21: $t12 := 48
+ 22: $t13 := copy($t0)
+ 23: $t14 := 10
+ 24: $t15 := %($t13, $t14)
+ 25: $t16 := +($t12, $t15)
+ 26: $t17 := (u8)($t16)
+ 27: utils::push_back<u8>fmt_type_args($t11, $t17)
+ 28: $t18 := move($t0)
+ 29: $t19 := 10
+ 30: $t20 := /($t18, $t19)
+ 31: $t0 := $t20
+ 32: goto 12
+ 33: label L2
+ 34: $t21 := borrow_local($t1)
+ 35: utils::reverse<u8>fmt_type_args($t21)
+ 36: $t22 := move($t1)
+ 37: $t23 := utils::utf8($t22)
+ 38: return $t23
 }
 
-
-[variant baseline]
-public fun DemoCoin::not_have_coin_capabilities($t0|$t0: address) {
-     var $t1: address
-     var $t2: bool
-     var $t3: bool
-     var $t4: u64
-  0: $t1 := move($t0)
-  1: $t2 := exists<DemoCoin::CoinCapabilities>($t1)
-  2: $t3 := !($t2)
-  3: if ($t3) goto 4 else goto 6
-  4: label L1
-  5: goto 9
-  6: label L0
-  7: $t4 := 1
-  8: abort($t4)
-  9: label L2
- 10: return ()
-}
-
-
-[variant baseline]
-public fun DemoCoin::register($t0|$t0: &signer) {
-     var $t1: &signer
-  0: $t1 := move($t0)
-  1: coin::register<DemoCoin::APD>($t1)
-  2: return ()
-}
-
-
-[variant baseline]
-public fun DemoCoin::unfreeze_user($t0|$t0: &signer, $t1|$t1: address) {
-     var $t2|$t2: address
-     var $t3|$t3: &coin::FreezeCapability<DemoCoin::APD>
+public fun utils::token_mint_and_transfer($t0|$t0: signer, $t1|$t1: &signer, $t2|$t2: ??unknown??): ??unknown?? {
+     var $t3|$t3: ??unknown??
      var $t4: &signer
-     var $t5: address
-     var $t6: address
-     var $t7: address
-     var $t8: address
-     var $t9: &DemoCoin::CoinCapabilities
-     var $t10: &coin::FreezeCapability<DemoCoin::APD>
-     var $t11: address
-     var $t12: &coin::FreezeCapability<DemoCoin::APD>
-  0: $t4 := move($t0)
-  1: $t5 := signer::address_of($t4)
-  2: $t2 := $t5
-  3: $t6 := copy($t2)
-  4: DemoCoin::is_admin($t6)
-  5: $t7 := move($t2)
-  6: DemoCoin::have_coin_capabilities($t7)
-  7: $t8 := 0x123
-  8: $t9 := borrow_global<DemoCoin::CoinCapabilities>($t8)
-  9: $t10 := borrow_field<DemoCoin::CoinCapabilities>.freeze_cap($t9)
- 10: $t3 := $t10
- 11: $t11 := move($t1)
- 12: $t12 := move($t3)
- 13: coin::unfreeze_coin_store<DemoCoin::APD>($t11, $t12)
- 14: return ()
+     var $t5: ??unknown??
+     var $t6: u64
+     var $t7: ??unknown??
+     var $t8: &signer
+     var $t9: bool
+     var $t10: &signer
+     var $t11: &signer
+     var $t12: ??unknown??
+     var $t13: u64
+     var $t14: ??unknown??
+  0: $t4 := borrow_local($t0)
+  1: $t5 := move($t2)
+  2: $t6 := 1
+  3: $t7 := utils::mint_token($t4, $t5, $t6)
+  4: $t3 := $t7
+  5: $t8 := copy($t1)
+  6: $t9 := true
+  7: utils::opt_in_direct_transfer($t8, $t9)
+  8: $t10 := borrow_local($t0)
+  9: $t11 := move($t1)
+ 10: $t12 := copy($t3)
+ 11: $t13 := 1
+ 12: utils::direct_transfer($t10, $t11, $t12, $t13)
+ 13: $t14 := move($t3)
+ 14: return $t14
 }
-
