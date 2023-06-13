@@ -1,72 +1,61 @@
 // =================================================================================================
 // Formatting
 use core::fmt;
+use move_binary_format::{
+    binary_views::FunctionView, file_format::CodeOffset, views::FunctionDefinitionView,
+};
+use move_model::{
+    ast::TempIndex,
+    model::{ModuleId, StructId},
+    ty::{Type, TypeDisplayContext},
+};
 use std::{collections::BTreeMap, fmt::Formatter};
-use move_binary_format::{file_format::CodeOffset, binary_views::FunctionView, views::FunctionDefinitionView};
-use move_model::{ast::TempIndex, ty::{Type, TypeDisplayContext}, model::{ModuleId, StructId}};
 
-use move_stackless_bytecode::{
-    stackless_bytecode::{
-        AssignKind, AttrId,
-        Bytecode::{self},
-        Constant, Label, Operation, PropKind, AbortAction, HavocKind, BorrowNode, BorrowEdge,
-    }
+use move_stackless_bytecode::stackless_bytecode::{
+    AbortAction, AssignKind, AttrId, BorrowEdge, BorrowNode,
+    Bytecode::{self}, HavocKind, Label, Operation, PropKind,
 };
 
-use crate::utils::*;
-
 use super::generate_bytecode::StacklessBytecodeGenerator;
-
 
 pub fn display<'env>(
     bytecode: &'env Bytecode,
     label_offsets: &'env BTreeMap<Label, CodeOffset>,
-    stbgr:&'env StacklessBytecodeGenerator
+    stbgr: &'env StacklessBytecodeGenerator,
 ) -> BytecodeDisplay<'env> {
     BytecodeDisplay {
         bytecode,
         label_offsets,
-        stbgr
+        stbgr,
     }
 }
 
 pub fn oper_display<'env>(
     oper: &'env Operation,
-    stbgr:&'env StacklessBytecodeGenerator<'env>,
+    stbgr: &'env StacklessBytecodeGenerator<'env>,
 ) -> OperationDisplay<'env> {
-    OperationDisplay {
-        oper,
-        stbgr,
-    }
+    OperationDisplay { oper, stbgr }
 }
-
 
 /// Creates a format object for a borrow node in context of a function target.
 pub fn BorrowNode_display<'env>(
     node: &'env BorrowNode,
-    stbgr:&'env StacklessBytecodeGenerator<'env>,
+    stbgr: &'env StacklessBytecodeGenerator<'env>,
 ) -> BorrowNodeDisplay<'env> {
-    BorrowNodeDisplay {
-        node,
-        stbgr,
-    }
+    BorrowNodeDisplay { node, stbgr }
 }
-
 
 pub fn BorrowEdge_display<'env>(
-    edge: &'env BorrowEdge, 
-    stbgr:&'env StacklessBytecodeGenerator<'env>,
+    edge: &'env BorrowEdge,
+    stbgr: &'env StacklessBytecodeGenerator<'env>,
 ) -> BorrowEdgeDisplay<'env> {
-    BorrowEdgeDisplay { 
-        stbgr, 
-        edge}
+    BorrowEdgeDisplay { stbgr, edge }
 }
-
 
 pub struct BytecodeDisplay<'env> {
     bytecode: &'env Bytecode,
     label_offsets: &'env BTreeMap<Label, CodeOffset>,
-    stbgr:&'env StacklessBytecodeGenerator<'env>
+    stbgr: &'env StacklessBytecodeGenerator<'env>,
 }
 
 impl<'env> fmt::Display for BytecodeDisplay<'env> {
@@ -87,7 +76,7 @@ impl<'env> fmt::Display for BytecodeDisplay<'env> {
                     self.fmt_locals(f, dsts, false)?;
                     write!(f, " := ")?;
                 }
-                write!(f, "{}", oper_display(oper,self.stbgr))?;
+                write!(f, "{}", oper_display(oper, self.stbgr))?;
                 self.fmt_locals(f, args, true)?;
                 if let Some(AbortAction(label, code)) = aa {
                     write!(
@@ -192,11 +181,10 @@ impl<'env> BytecodeDisplay<'env> {
     }
 }
 
-
 /// A display object for an operation.
 pub struct OperationDisplay<'env> {
     oper: &'env Operation,
-    stbgr:&'env StacklessBytecodeGenerator<'env>
+    stbgr: &'env StacklessBytecodeGenerator<'env>,
 }
 
 impl<'env> fmt::Display for OperationDisplay<'env> {
@@ -242,11 +230,7 @@ impl<'env> fmt::Display for OperationDisplay<'env> {
                 let struct_data = self.stbgr.module_data.struct_data.get(sid).unwrap();
                 for data in struct_data.field_data.values() {
                     if data.offset == *offset {
-                        write!(
-                            f,
-                            ".{}",
-                            data.name.display(&self.stbgr.symbol_pool)
-                        )?;
+                        write!(f, ".{}", data.name.display(&self.stbgr.symbol_pool))?;
                         break;
                     }
                 }
@@ -259,11 +243,7 @@ impl<'env> fmt::Display for OperationDisplay<'env> {
                 let struct_data = self.stbgr.module_data.struct_data.get(sid).unwrap();
                 for data in struct_data.field_data.values() {
                     if data.offset == *offset {
-                        write!(
-                            f,
-                            ".{}",
-                            data.name.display(&self.stbgr.symbol_pool)
-                        )?;
+                        write!(f, ".{}", data.name.display(&self.stbgr.symbol_pool))?;
                         break;
                     }
                 }
@@ -323,7 +303,7 @@ impl<'env> fmt::Display for OperationDisplay<'env> {
                 // )?;
             }
             IsParent(node, edge) => {
-                // TODO 
+                // TODO
                 // write!(
                 //     f,
                 //     "is_parent[{}{}]",
@@ -407,9 +387,9 @@ impl<'env> fmt::Display for OperationDisplay<'env> {
 impl<'env> OperationDisplay<'env> {
     fn fmt_type_args(&self, f: &mut Formatter<'_>, targs: &[Type]) -> fmt::Result {
         if !targs.is_empty() {
-            let tctx = TypeDisplayContext::WithoutEnv { 
-                symbol_pool: &self.stbgr.symbol_pool, 
-                reverse_struct_table: &self.stbgr.reverse_struct_table 
+            let tctx = TypeDisplayContext::WithoutEnv {
+                symbol_pool: &self.stbgr.symbol_pool,
+                reverse_struct_table: &self.stbgr.reverse_struct_table,
             };
             write!(f, "<")?;
             for (i, ty) in targs.iter().enumerate() {
@@ -425,9 +405,9 @@ impl<'env> OperationDisplay<'env> {
 
     fn struct_str(&self, mid: ModuleId, sid: StructId, targs: &[Type]) -> String {
         let ty = Type::Struct(mid, sid, targs.to_vec());
-        let tctx = TypeDisplayContext::WithoutEnv { 
-            symbol_pool: &self.stbgr.symbol_pool, 
-            reverse_struct_table: &self.stbgr.reverse_struct_table
+        let tctx = TypeDisplayContext::WithoutEnv {
+            symbol_pool: &self.stbgr.symbol_pool,
+            reverse_struct_table: &self.stbgr.reverse_struct_table,
         };
         format!("{}", ty.display(&tctx))
     }
@@ -436,7 +416,7 @@ impl<'env> OperationDisplay<'env> {
 /// A display object for a borrow node.
 pub struct BorrowNodeDisplay<'env> {
     node: &'env BorrowNode,
-    stbgr:&'env StacklessBytecodeGenerator<'env>
+    stbgr: &'env StacklessBytecodeGenerator<'env>,
 }
 
 impl<'env> fmt::Display for BorrowNodeDisplay<'env> {
@@ -466,9 +446,8 @@ impl<'env> fmt::Display for BorrowNodeDisplay<'env> {
     }
 }
 
-
 pub struct BorrowEdgeDisplay<'a> {
-    stbgr:&'a StacklessBytecodeGenerator<'a>,
+    stbgr: &'a StacklessBytecodeGenerator<'a>,
     edge: &'a BorrowEdge,
 }
 

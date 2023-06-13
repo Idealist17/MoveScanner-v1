@@ -1,58 +1,44 @@
-use std::{collections::{BTreeMap, BTreeSet}, vec, fmt};
+
 use itertools::Itertools;
-use move_stackless_bytecode::{
-    stackless_bytecode::{
-        AssignKind, AttrId,
-        Bytecode::{self},
-        Constant, Label, Operation, PropKind,
-    },
-};
 use move_binary_format::{
-    CompiledModule,
+    access::ModuleAccess,
     binary_views::BinaryIndexedView,
-    views::{
-        FunctionDefinitionView,
-        FunctionHandleView,
-        StructHandleView
-    },
     file_format::{
-        CodeOffset,
-        Bytecode as MoveBytecode,
-        FunctionDefinition,
-        FieldHandleIndex,
-        SignatureIndex,
-        SignatureToken,
-        StructDefinitionIndex,
-        FunctionDefinitionIndex,
-        Constant as VMConstant,
-        StructFieldInformation,
-        FunctionHandleIndex, StructHandleIndex,
-    }, 
-    internals::ModuleIndex, access::ModuleAccess,
-    
-};
-use num::{BigUint, Num};
-use move_model::{
-    ast::{ConditionKind, TempIndex, ModuleName, Attribute, Spec, QualifiedSymbol},
-    model::{
-        FunId, FunctionEnv, 
-        Loc, ModuleId, StructId, 
-        ModuleData, StructData, 
-        FieldId, FieldData, 
-        FunctionData, StructInfo, FieldInfo
+        Bytecode as MoveBytecode, CodeOffset, Constant as VMConstant, FieldHandleIndex,
+        FunctionDefinition, FunctionDefinitionIndex, FunctionHandleIndex, SignatureIndex,
+        SignatureToken, StructDefinitionIndex, StructFieldInformation, StructHandleIndex,
     },
-    ty::{PrimitiveType, Type, TypeDisplayContext},
-    symbol::{Symbol, SymbolPool, self},
+    internals::ModuleIndex,
+    views::{FunctionDefinitionView, FunctionHandleView},
+    CompiledModule,
 };
+use move_core_types::{account_address::AccountAddress};
 use move_core_types::{
     language_storage::{self, CORE_CODE_ADDRESS},
     value::MoveValue,
 };
-use move_core_types::{account_address::AccountAddress, identifier::Identifier};
+use move_model::{
+    ast::{Attribute, ModuleName, QualifiedSymbol, Spec, TempIndex},
+    model::{
+        FieldData, FieldId, FieldInfo, FunId, FunctionData, Loc, ModuleData, ModuleId,
+        StructData, StructId, StructInfo,
+    },
+    symbol::{Symbol, SymbolPool},
+    ty::{PrimitiveType, Type, TypeDisplayContext},
+};
+use move_stackless_bytecode::stackless_bytecode::{
+    AssignKind, AttrId,
+    Bytecode,
+    Constant, Label, Operation,
+};
+use num::{BigUint, Num};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt, vec,
+};
 
-use crate::utils::utils;
 use crate::move_ir::bytecode_display;
-
+use crate::utils::utils;
 
 pub fn addr_to_big_uint(addr: &AccountAddress) -> BigUint {
     BigUint::from_str_radix(&addr.to_string(), 16).unwrap()
@@ -77,7 +63,7 @@ pub struct StacklessBytecodeGenerator<'a> {
     // 存放所有module name，其中ModuleId和ModuleHandleIndex在usize上一一对应
     pub module_names: Vec<ModuleName>,
     // vector module id
-    pub vec_module_id_opt: Option<ModuleId>,
+    pub vec_module_id: ModuleId,
 }
 
 impl<'a> StacklessBytecodeGenerator<'a> {
@@ -92,16 +78,33 @@ impl<'a> StacklessBytecodeGenerator<'a> {
         // add module handle
         let mut module_names = vec![];
         let mut vec_module_id_opt: Option<ModuleId> = None;
+        let mut flag = false;
         for (i, module_handle) in cm.module_handles.iter().enumerate() {
             let move_module_id = cm.module_id_for_handle(module_handle);
             let addr = addr_to_big_uint(move_module_id.address());
-            let module_name = ModuleName::new(addr, symbol_pool.make(move_module_id.name().as_str()));
+            let module_name =
+                ModuleName::new(addr, symbol_pool.make(move_module_id.name().as_str()));
             println!("{}", module_name.display(&symbol_pool));
             // 事先找好vector的module，后面会多次使用
             if move_module_id.name().as_str() == "vector" {
                 vec_module_id_opt = Some(ModuleId::new(i));
+                flag = true;
             }
             module_names.push(module_name);
+        }
+        // TODO 目前不确定vector是是否在module_handles之中
+        if !flag {
+            let storage_id = language_storage::ModuleId::new(
+                CORE_CODE_ADDRESS,
+                move_core_types::identifier::Identifier::new("vector").unwrap(),
+            );
+            let vec_module = ModuleName::from_str(
+                &storage_id.address().to_string(),
+                symbol_pool.make(storage_id.name().as_str()),
+            );
+            let index = module_names.len();
+            module_names.push(vec_module);
+            vec_module_id_opt = Some(ModuleId::new(index));
         }
 
         // add functions
@@ -126,13 +129,23 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             let name = cm.identifier_at(cm.struct_handle_at(def.struct_handle).name);
             let symbol = symbol_pool.make(name.as_str());
             let struct_id = StructId::new(symbol);
-            let data = create_move_struct_data(&symbol_pool, cm, def_idx, symbol, Loc::default(), Vec::default());
+            let data = create_move_struct_data(
+                &symbol_pool,
+                cm,
+                def_idx,
+                symbol,
+                Loc::default(),
+                Vec::default(),
+            );
             module_data.struct_data.insert(struct_id, data);
             module_data.struct_idx_to_id.insert(def_idx, struct_id);
-            
+
             let addr = addr_to_big_uint(id.address());
             let module_name = ModuleName::new(addr, symbol_pool.make(id.name().as_str()));
-            let qsymbol = QualifiedSymbol{module_name, symbol};
+            let qsymbol = QualifiedSymbol {
+                module_name,
+                symbol,
+            };
             reverse_struct_table.insert((module_id, struct_id), qsymbol);
         }
 
@@ -142,7 +155,10 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             let name = cm.identifier_at(handle.name);
             let symbol = symbol_pool.make(name.as_str());
             let struct_id = StructId::new(symbol);
-            let qsymbol = QualifiedSymbol{module_name, symbol};
+            let qsymbol = QualifiedSymbol {
+                module_name,
+                symbol,
+            };
             reverse_struct_table.insert((ModuleId::new(module_index), struct_id), qsymbol);
         }
 
@@ -161,7 +177,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             symbol_pool: symbol_pool,
             reverse_struct_table,
             module_names,
-            vec_module_id_opt,
+            vec_module_id: vec_module_id_opt.unwrap(),
         }
     }
 
@@ -234,24 +250,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
 
         let attr_id = self.new_loc_attr(code_offset);
 
-        let mut mk_vec_function_operation = |name: &str, tys: Vec<Type>| -> Operation {
-            if self.vec_module_id_opt.is_none() {
-                // let storage_id = language_storage::ModuleId::new(
-                //     CORE_CODE_ADDRESS,
-                //     move_core_types::identifier::Identifier::new("vector").unwrap(),
-                // );
-                // let vec_module = ModuleName::from_str(
-                //     &storage_id.address().to_string(),
-                //     // 单个module的sysbol_pool，存在问题
-                //     self.symbol_pool.make(storage_id.name().as_str()),
-                // );
-                // let index = self.module_names.len();
-                // self.module_names.push(vec_module);
-                // self.vec_module_id_opt = Some(ModuleId::new(index));
-                // self.vec_module_id_opt = Some(ModuleId::new(index));
-            };
+        let mk_vec_function_operation = |name: &str, tys: Vec<Type>| -> Operation {
             let vec_fun = FunId::new(self.symbol_pool.make(name));
-            Operation::Function(self.module_data.id, vec_fun, tys)
+            Operation::Function(self.vec_module_id, vec_fun, tys)
         };
 
         let mk_call = |op: Operation, dsts: Vec<usize>, srcs: Vec<usize>| -> Bytecode {
@@ -310,7 +311,8 @@ impl<'a> StacklessBytecodeGenerator<'a> {
 
             MoveBytecode::Ret => {
                 let mut return_temps = vec![];
-                for _ in 0..f.return_().len() { // OK
+                for _ in 0..f.return_().len() {
+                    // OK
                     let return_temp_index = self.temp_stack.pop().unwrap();
                     return_temps.push(return_temp_index);
                 }
@@ -375,7 +377,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.temp_stack.push(field_ref_index);
                 self.code.push(mk_call(
                     Operation::BorrowField(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         struct_id,
                         vec![],
                         field_offset,
@@ -403,7 +407,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.temp_stack.push(field_ref_index);
                 self.code.push(mk_call(
                     Operation::BorrowField(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         struct_id,
                         actuals,
                         field_offset,
@@ -538,7 +544,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let ty = self.globalize_signature(&constant.type_);
                 let value = Self::translate_value(
                     &ty,
-                    &VMConstant::deserialize_constant(&constant).unwrap()
+                    &VMConstant::deserialize_constant(&constant).unwrap(),
                 );
                 self.local_types.push(ty);
                 self.code.push(Bytecode::Load(attr_id, temp_index, value));
@@ -663,7 +669,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 for return_type_view in function_handle_view.return_tokens() {
                     let return_temp_index = self.temp_count;
                     // instantiate type parameters
-                    let return_type = self.globalize_signature(return_type_view.signature_token()).instantiate(&type_sigs);
+                    let return_type = self
+                        .globalize_signature(return_type_view.signature_token())
+                        .instantiate(&type_sigs);
                     return_temp_indices.push(return_temp_index);
                     self.temp_stack.push(return_temp_index);
                     self.local_types.push(return_type);
@@ -672,7 +680,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 arg_temp_indices.reverse();
                 self.code.push(mk_call(
                     Operation::Function(
-                        ModuleId::new(self.get_module_handle_index_of_func(&func_instantiation.handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_func(&func_instantiation.handle),
+                        ),
                         self.get_fun_id_by_idx(&func_instantiation.handle),
                         type_sigs,
                     ),
@@ -684,7 +694,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             MoveBytecode::Pack(idx) => {
                 let mut field_temp_indices = vec![];
                 let struct_temp_index = self.temp_count;
-                
+
                 let struct_def = view.struct_def_at(*idx).unwrap();
                 for _ in 0..struct_def.declared_field_count().unwrap() {
                     let field_temp_index = self.temp_stack.pop().unwrap();
@@ -693,7 +703,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
 
                 let struct_handle = self.module.struct_def_at(*idx).struct_handle;
                 self.local_types.push(Type::Struct(
-                    ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                    ModuleId::new(
+                        self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                    ),
                     self.get_struct_id_by_idx(&struct_handle),
                     vec![],
                 ));
@@ -701,9 +713,12 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 field_temp_indices.reverse();
                 self.code.push(mk_call(
                     Operation::Pack(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         self.get_struct_id_by_idx(&struct_handle),
-                        vec![]),
+                        vec![],
+                    ),
                     vec![struct_temp_index],
                     field_temp_indices,
                 ));
@@ -718,13 +733,15 @@ impl<'a> StacklessBytecodeGenerator<'a> {
 
                 let struct_handle = self.module.struct_instantiation_at(*idx);
                 let struct_def = view.struct_def_at(struct_handle.def).unwrap();
-                let count =  struct_def.declared_field_count().unwrap();
+                let count = struct_def.declared_field_count().unwrap();
                 for _ in 0..count {
                     let field_temp_index = self.temp_stack.pop().unwrap();
                     field_temp_indices.push(field_temp_index);
                 }
                 self.local_types.push(Type::Struct(
-                    ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                    ModuleId::new(
+                        self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                    ),
                     self.get_struct_id_by_idx(&struct_def.struct_handle),
                     actuals.clone(),
                 ));
@@ -732,9 +749,12 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 field_temp_indices.reverse();
                 self.code.push(mk_call(
                     Operation::Pack(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         self.get_struct_id_by_idx(&struct_def.struct_handle),
-                        actuals),
+                        actuals,
+                    ),
                     vec![struct_temp_index],
                     field_temp_indices,
                 ));
@@ -742,13 +762,26 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             }
 
             MoveBytecode::Unpack(idx) => {
-                let struct_def  = self.module.struct_def_at(*idx);
-                let name = self.module.identifier_at(self.module.struct_handle_at(struct_def.struct_handle).name);
+                let struct_def = self.module.struct_def_at(*idx);
+                let name = self
+                    .module
+                    .identifier_at(self.module.struct_handle_at(struct_def.struct_handle).name);
                 let symbol = self.symbol_pool.make(name.as_str());
-                let struct_data = create_move_struct_data(&self.symbol_pool, self.module, *idx, symbol, Loc::default(), Vec::default(),);
+                let struct_data = create_move_struct_data(
+                    &self.symbol_pool,
+                    self.module,
+                    *idx,
+                    symbol,
+                    Loc::default(),
+                    Vec::default(),
+                );
                 let mut field_temp_indices = vec![];
                 let struct_temp_index = self.temp_stack.pop().unwrap();
-                for field_data in struct_data.field_data.values().sorted_by_key(|data| data.offset) {
+                for field_data in struct_data
+                    .field_data
+                    .values()
+                    .sorted_by_key(|data| data.offset)
+                {
                     let field_temp_index = self.temp_count;
                     field_temp_indices.push(field_temp_index);
                     self.temp_stack.push(field_temp_index);
@@ -757,9 +790,12 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 }
                 self.code.push(mk_call(
                     Operation::Unpack(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         self.get_struct_id_by_idx(&struct_def.struct_handle),
-                        vec![]),
+                        vec![],
+                    ),
                     field_temp_indices,
                     vec![struct_temp_index],
                 ));
@@ -774,10 +810,23 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let struct_handle = self.module.struct_instantiation_at(*idx);
                 let struct_def = view.struct_def_at(struct_handle.def).unwrap();
 
-                let name = self.module.identifier_at(self.module.struct_handle_at(struct_def.struct_handle).name);
+                let name = self
+                    .module
+                    .identifier_at(self.module.struct_handle_at(struct_def.struct_handle).name);
                 let symbol = self.symbol_pool.make(name.as_str());
-                let struct_data = create_move_struct_data(&self.symbol_pool, self.module, struct_def_id, symbol, Loc::default(), Vec::default(),);
-                for field_data in struct_data.field_data.values().sorted_by_key(|data| data.offset) {
+                let struct_data = create_move_struct_data(
+                    &self.symbol_pool,
+                    self.module,
+                    struct_def_id,
+                    symbol,
+                    Loc::default(),
+                    Vec::default(),
+                );
+                for field_data in struct_data
+                    .field_data
+                    .values()
+                    .sorted_by_key(|data| data.offset)
+                {
                     let field_type = self.get_type(field_data).instantiate(&actuals);
                     let field_temp_index = self.temp_count;
                     field_temp_indices.push(field_temp_index);
@@ -787,9 +836,12 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 }
                 self.code.push(mk_call(
                     Operation::Unpack(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         self.get_struct_id_by_idx(&struct_def.struct_handle),
-                        actuals),
+                        actuals,
+                    ),
                     field_temp_indices,
                     vec![struct_temp_index],
                 ));
@@ -1038,7 +1090,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.temp_stack.push(temp_index);
                 self.code.push(mk_unary(
                     Operation::Exists(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         self.get_struct_id_by_idx(&struct_def.struct_handle),
                         vec![],
                     ),
@@ -1057,7 +1111,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.temp_stack.push(temp_index);
                 self.code.push(mk_unary(
                     Operation::Exists(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         self.get_struct_id_by_idx(&struct_def.struct_handle),
                         self.get_type_params(struct_instantiation.type_parameters),
                     ),
@@ -1074,7 +1130,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.local_types.push(Type::Reference(
                     is_mut,
                     Box::new(Type::Struct(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         self.get_struct_id_by_idx(&struct_def.struct_handle),
                         vec![],
                     )),
@@ -1083,7 +1141,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.temp_count += 1;
                 self.code.push(mk_unary(
                     Operation::BorrowGlobal(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         self.get_struct_id_by_idx(&struct_def.struct_handle),
                         vec![],
                     ),
@@ -1103,7 +1163,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.local_types.push(Type::Reference(
                     is_mut,
                     Box::new(Type::Struct(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         self.get_struct_id_by_idx(&struct_def.struct_handle),
                         actuals.clone(),
                     )),
@@ -1112,7 +1174,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.temp_count += 1;
                 self.code.push(mk_unary(
                     Operation::BorrowGlobal(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         self.get_struct_id_by_idx(&struct_def.struct_handle),
                         actuals,
                     ),
@@ -1127,14 +1191,18 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Struct(
-                    ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                    ModuleId::new(
+                        self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                    ),
                     self.get_struct_id_by_idx(&struct_def.struct_handle),
                     vec![],
                 ));
                 self.temp_count += 1;
                 self.code.push(mk_unary(
                     Operation::MoveFrom(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         self.get_struct_id_by_idx(&struct_def.struct_handle),
                         vec![],
                     ),
@@ -1151,14 +1219,18 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.temp_stack.push(temp_index);
                 let actuals = self.get_type_params(struct_instantiation.type_parameters);
                 self.local_types.push(Type::Struct(
-                    ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                    ModuleId::new(
+                        self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                    ),
                     self.get_struct_id_by_idx(&struct_def.struct_handle),
                     actuals.clone(),
                 ));
                 self.temp_count += 1;
                 self.code.push(mk_unary(
                     Operation::MoveFrom(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         self.get_struct_id_by_idx(&struct_def.struct_handle),
                         actuals,
                     ),
@@ -1173,7 +1245,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let signer_operand_index = self.temp_stack.pop().unwrap();
                 self.code.push(mk_call(
                     Operation::MoveTo(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         self.get_struct_id_by_idx(&struct_def.struct_handle),
                         vec![],
                     ),
@@ -1189,7 +1263,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let signer_operand_index = self.temp_stack.pop().unwrap();
                 self.code.push(mk_call(
                     Operation::MoveTo(
-                        ModuleId::new(self.get_module_handle_index_of_struct(&struct_def.struct_handle)),
+                        ModuleId::new(
+                            self.get_module_handle_index_of_struct(&struct_def.struct_handle),
+                        ),
                         self.get_struct_id_by_idx(&struct_def.struct_handle),
                         self.get_type_params(struct_instantiation.type_parameters),
                     ),
@@ -1368,7 +1444,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
         attr
     }
 
-    pub fn get_bytecode_loc(&self, offset: u16) -> Loc {
+    pub fn get_bytecode_loc(&self, _: u16) -> Loc {
         let func_id = self.module_data.function_idx_to_id[&self.func_define_idx];
         let func_data = &self.module_data.function_data[&func_id];
         func_data.loc.clone()
@@ -1378,19 +1454,32 @@ impl<'a> StacklessBytecodeGenerator<'a> {
         let field_handle = self.module.field_handle_at(field_handle_index);
         let struct_def = self.module.struct_def_at(field_handle.owner);
         let struct_id = self.get_struct_id_by_idx(&struct_def.struct_handle);
-        let name = self.module.identifier_at(self.module.struct_handle_at(struct_def.struct_handle).name);
+        let name = self
+            .module
+            .identifier_at(self.module.struct_handle_at(struct_def.struct_handle).name);
         let symbol = self.symbol_pool.make(name.as_str());
-        let struct_data = create_move_struct_data(&self.symbol_pool, self.module, field_handle.owner, symbol, Loc::default(),  Vec::default(),);
+        let struct_data = create_move_struct_data(
+            &self.symbol_pool,
+            self.module,
+            field_handle.owner,
+            symbol,
+            Loc::default(),
+            Vec::default(),
+        );
         let offset = field_handle.field as usize;
-        let mut filed_data =  struct_data.field_data.first_key_value().unwrap().1;
+        let mut filed_data = struct_data.field_data.first_key_value().unwrap().1;
         for data in struct_data.field_data.values() {
             if data.offset == offset {
                 filed_data = data;
             }
         }
-        (struct_id, field_handle.field as usize, self.get_type(filed_data))
+        (
+            struct_id,
+            field_handle.field as usize,
+            self.get_type(filed_data),
+        )
     }
-    
+
     pub fn globalize_signature(&self, sig: &SignatureToken) -> Type {
         match sig {
             SignatureToken::Bool => Type::Primitive(PrimitiveType::Bool),
@@ -1410,24 +1499,16 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             }
             SignatureToken::TypeParameter(index) => Type::TypeParameter(*index),
             SignatureToken::Vector(bt) => Type::Vector(Box::new(self.globalize_signature(bt))),
-            SignatureToken::Struct(handle_idx) => {
-                // let struct_view = StructHandleView::new(
-                //     self.module,
-                //     self.module.struct_handle_at(*handle_idx),
-                // );
-                Type::Struct(
-                    ModuleId::new(self.get_module_handle_index_of_struct(handle_idx)), 
-                    self.get_struct_id_by_idx(handle_idx), 
-                    vec![]
-                )
-            }
-            SignatureToken::StructInstantiation(handle_idx, args) => {
-                Type::Struct(
-                    ModuleId::new(self.get_module_handle_index_of_struct(handle_idx)),
-                    self.get_struct_id_by_idx(handle_idx),
-                    self.globalize_signatures(args),
-                )
-            }
+            SignatureToken::Struct(handle_idx) => Type::Struct(
+                ModuleId::new(self.get_module_handle_index_of_struct(handle_idx)),
+                self.get_struct_id_by_idx(handle_idx),
+                vec![],
+            ),
+            SignatureToken::StructInstantiation(handle_idx, args) => Type::Struct(
+                ModuleId::new(self.get_module_handle_index_of_struct(handle_idx)),
+                self.get_struct_id_by_idx(handle_idx),
+                self.globalize_signatures(args),
+            ),
         }
     }
 
@@ -1441,7 +1522,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
         let actuals = &self.module.signature_at(type_params_index).0;
         self.globalize_signatures(&actuals)
     }
-    
+
     fn translate_value(ty: &Type, value: &MoveValue) -> Constant {
         match (ty, &value) {
             (Type::Vector(inner), MoveValue::Vector(vs)) => match **inner {
@@ -1487,7 +1568,11 @@ impl<'a> StacklessBytecodeGenerator<'a> {
         }
     }
 
-    pub fn get_local_type(&self, view: &FunctionDefinitionView<CompiledModule>, idx: usize) -> Type {
+    pub fn get_local_type(
+        &self,
+        view: &FunctionDefinitionView<CompiledModule>,
+        idx: usize,
+    ) -> Type {
         let parameters = view.parameters();
         if idx < parameters.len() {
             self.globalize_signature(&parameters.0[idx])
@@ -1508,7 +1593,8 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             return func_data.arg_names[idx as usize];
         }
         // Try to obtain name from source map.
-        if let Ok(fmap) = self.module_data
+        if let Ok(fmap) = self
+            .module_data
             .source_map
             .get_function_source_map(self.func_define_idx)
         {
@@ -1556,7 +1642,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             FieldInfo::Generated { type_ } => type_.clone(),
         }
     }
-    
+
     fn get_module_handle_index_of_struct(&self, struct_handle_index: &StructHandleIndex) -> usize {
         let struct_handle = self.module.struct_handle_at(*struct_handle_index);
         struct_handle.module.into_index()
@@ -1638,17 +1724,15 @@ impl<'env> fmt::Display for StacklessBytecodeGenerator<'env> {
             }
             write!(f, ">")?;
         }
-        // TODO
-        let tctx = TypeDisplayContext::WithoutEnv { 
-            symbol_pool: &self.symbol_pool, 
-            reverse_struct_table: &self.reverse_struct_table 
-        } ;
+        let tctx = TypeDisplayContext::WithoutEnv {
+            symbol_pool: &self.symbol_pool,
+            reverse_struct_table: &self.reverse_struct_table,
+        };
         let user_local_count = match view.locals_signature() {
             Some(locals_view) => locals_view.len(),
             None => view.parameters().len(),
         };
         let write_decl = |f: &mut fmt::Formatter<'_>, i: TempIndex| {
-            // let ty_ = self.get_local_type(&view, i);
             let ty_ = &self.local_types[i];
             let ty = ty_.display(&tctx);
             if i < user_local_count {
@@ -1656,8 +1740,7 @@ impl<'env> fmt::Display for StacklessBytecodeGenerator<'env> {
                     f,
                     "$t{}|{}: {}",
                     i,
-                    self.get_local_name(i)
-                        .display(&self.symbol_pool),
+                    self.get_local_name(i).display(&self.symbol_pool),
                     ty
                 )
             } else {
@@ -1665,7 +1748,7 @@ impl<'env> fmt::Display for StacklessBytecodeGenerator<'env> {
             }
         };
         write!(f, "(")?;
-        
+
         for i in 0..view.arg_tokens().count() {
             if i > 0 {
                 write!(f, ", ")?;
@@ -1683,7 +1766,11 @@ impl<'env> fmt::Display for StacklessBytecodeGenerator<'env> {
                 if i > 0 {
                     write!(f, ", ")?;
                 }
-                write!(f, "{}", self.globalize_signature(&returns[i]).display(&tctx))?;
+                write!(
+                    f,
+                    "{}",
+                    self.globalize_signature(&returns[i]).display(&tctx)
+                )?;
             }
             if view.return_count() > 1 {
                 write!(f, ")")?;
@@ -1698,15 +1785,17 @@ impl<'env> fmt::Display for StacklessBytecodeGenerator<'env> {
                 write_decl(f, i)?;
                 writeln!(f)?;
             }
-            
+
             let bytecodes = self.code.clone();
             let label_offsets = Bytecode::label_offsets(&bytecodes);
             for (offset, code) in bytecodes.iter().enumerate() {
-                writeln!(f, "{:>3}: {}", offset, bytecode_display::display(code, &label_offsets, &self));
-                // println!(
-                //     "{}",
-                //     format!("{:>3}: {}", offset, bytecode_display::display(code, &label_offsets, &self))
-                // );
+                writeln!(
+                    f,
+                    "{:>3}: {}",
+                    offset,
+                    bytecode_display::display(code, &label_offsets, &self)
+                )
+                .unwrap();
             }
             writeln!(f, "}}")?;
         }
