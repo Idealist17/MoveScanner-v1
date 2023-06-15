@@ -1,7 +1,6 @@
 use itertools::Itertools;
 use move_binary_format::{
     access::ModuleAccess,
-    binary_views::BinaryIndexedView,
     file_format::{
         Bytecode as MoveBytecode, CodeOffset, Constant as VMConstant, FieldHandleIndex,
         FunctionDefinition, FunctionDefinitionIndex, FunctionHandleIndex, SignatureIndex,
@@ -30,7 +29,7 @@ use move_stackless_bytecode::stackless_bytecode::{
     Bytecode,
     Constant, Label, Operation,
 };
-use num::{BigUint, Num, ToPrimitive};
+use num::{BigUint, Num};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt, vec,
@@ -120,7 +119,6 @@ impl<'a> StacklessBytecodeGenerator<'a> {
         }
 
         // add functions
-        let mut func_define_idx = FunctionDefinitionIndex(0 as u16);
         for (i, def) in cm.function_defs().iter().enumerate() {
             let def_idx = FunctionDefinitionIndex(i as u16);
             let name = cm.identifier_at(cm.function_handle_at(def.function).name);
@@ -129,9 +127,6 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             let data = FunctionData::stub(symbol, def_idx, def.function);
             module_data.function_data.insert(fun_id, data);
             module_data.function_idx_to_id.insert(def_idx, fun_id);
-            if def == func_define {
-                func_define_idx = def_idx;
-            }
         }
 
         let mut reverse_struct_table = BTreeMap::new();
