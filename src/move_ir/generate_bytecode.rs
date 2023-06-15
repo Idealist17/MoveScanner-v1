@@ -19,7 +19,7 @@ use move_model::{
     ast::{Attribute, ModuleName, QualifiedSymbol, Spec, TempIndex},
     model::{
         FieldData, FieldId, FieldInfo, FunId, FunctionData, Loc, ModuleData, ModuleId,
-        StructData, StructId, StructInfo,
+        StructData, StructId, StructInfo, QualifiedId,
     },
     symbol::{Symbol, SymbolPool},
     ty::{PrimitiveType, Type, TypeDisplayContext},
@@ -34,8 +34,9 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt, vec,
 };
+use petgraph::graph::{Graph, DiGraph, NodeIndex};
 
-use crate::move_ir::bytecode_display;
+use crate::{move_ir::bytecode_display, utils::graph};
 use crate::utils::utils;
 
 pub fn addr_to_big_uint(addr: &AccountAddress) -> BigUint {
@@ -44,6 +45,7 @@ pub fn addr_to_big_uint(addr: &AccountAddress) -> BigUint {
 
 pub struct FunctionInfo {
     pub code: Vec<Bytecode>,
+    pub local_types: Vec<Type>,
     pub location_table: BTreeMap<AttrId, Loc>,
     pub loop_invariants: BTreeSet<AttrId>,
     pub fallthrough_labels: BTreeSet<Label>,
@@ -53,6 +55,7 @@ impl FunctionInfo {
     pub fn new() -> Self {
         FunctionInfo {
             code: vec![],
+            local_types: vec![],
             location_table: BTreeMap::new(),
             loop_invariants: BTreeSet::new(),
             fallthrough_labels: BTreeSet::new(),
@@ -66,11 +69,12 @@ pub struct StacklessBytecodeGenerator<'a> {
 
     pub temp_count: usize,
     pub temp_stack: Vec<usize>,
-    pub local_types: Vec<Type>,
 
     pub symbol_pool: SymbolPool, // 全局符号池，相当于globalenv的符号池
     pub reverse_struct_table: BTreeMap<(ModuleId, StructId), QualifiedSymbol>, // 存放所有module name，其中ModuleId和ModuleHandleIndex在usize上一一对应
     pub module_names: Vec<ModuleName>, // 所有的module handle
+    pub func_to_node: BTreeMap<QualifiedId<FunId>, NodeIndex>,
+    pub call_graph: Graph<QualifiedId<FunId>, ()>,
 
     pub display_opt: Option<usize>,
     pub vec_module_id: ModuleId, // vector module id
@@ -174,13 +178,14 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             module_data,
             temp_count: 0,
             temp_stack: vec![],
-            local_types: vec![],
             symbol_pool: symbol_pool,
             reverse_struct_table,
             module_names,
             vec_module_id: vec_module_id_opt.unwrap(),
             functions: vec![],
             display_opt: None,
+            func_to_node: BTreeMap::new(),
+            call_graph: Graph::new(),
         }
     }
 
@@ -197,7 +202,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 .map(|i| self.get_local_type(&view, i))
                 .collect_vec();
             self.temp_count = local_types.len();
-            self.local_types = local_types;
+            function.local_types = local_types;
 
             let original_code = match &func_def.code {
                 Some(code) => code.code.as_slice(),
@@ -358,12 +363,12 @@ impl<'a> StacklessBytecodeGenerator<'a> {
 
             MoveBytecode::FreezeRef => {
                 let mutable_ref_index = self.temp_stack.pop().unwrap();
-                let mutable_ref_sig = self.local_types[mutable_ref_index].clone();
+                let mutable_ref_sig = function.local_types[mutable_ref_index].clone();
                 if let Type::Reference(is_mut, signature) = mutable_ref_sig {
                     if is_mut {
                         let immutable_ref_index = self.temp_count;
                         self.temp_stack.push(immutable_ref_index);
-                        self.local_types.push(Type::Reference(false, signature));
+                        function.local_types.push(Type::Reference(false, signature));
                         function.code.push(mk_call(
                             Operation::FreezeRef,
                             vec![immutable_ref_index],
@@ -397,7 +402,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 ));
                 self.temp_count += 1;
                 let is_mut = matches!(bytecode, MoveBytecode::MutBorrowField(..));
-                self.local_types
+                function.local_types
                     .push(Type::Reference(is_mut, Box::new(field_type)));
             }
 
@@ -427,14 +432,14 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 ));
                 self.temp_count += 1;
                 let is_mut = matches!(bytecode, MoveBytecode::MutBorrowFieldGeneric(..));
-                self.local_types
+                function.local_types
                     .push(Type::Reference(is_mut, Box::new(field_type)));
             }
 
             MoveBytecode::LdU8(number) => {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Primitive(PrimitiveType::U8));
+                function.local_types.push(Type::Primitive(PrimitiveType::U8));
                 function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::U8(*number)));
                 self.temp_count += 1;
@@ -443,7 +448,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             MoveBytecode::LdU16(number) => {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Primitive(PrimitiveType::U16));
+                function.local_types.push(Type::Primitive(PrimitiveType::U16));
                 function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::U16(*number)));
                 self.temp_count += 1;
@@ -452,7 +457,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             MoveBytecode::LdU32(number) => {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Primitive(PrimitiveType::U32));
+                function.local_types.push(Type::Primitive(PrimitiveType::U32));
                 function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::U32(*number)));
                 self.temp_count += 1;
@@ -461,7 +466,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             MoveBytecode::LdU64(number) => {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Primitive(PrimitiveType::U64));
+                function.local_types.push(Type::Primitive(PrimitiveType::U64));
                 function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::U64(*number)));
                 self.temp_count += 1;
@@ -470,7 +475,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             MoveBytecode::LdU256(number) => {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Primitive(PrimitiveType::U256));
+                function.local_types.push(Type::Primitive(PrimitiveType::U256));
                 function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::from(number)));
                 self.temp_count += 1;
@@ -479,7 +484,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             MoveBytecode::LdU128(number) => {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Primitive(PrimitiveType::U128));
+                function.local_types.push(Type::Primitive(PrimitiveType::U128));
                 function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::U128(*number)));
                 self.temp_count += 1;
@@ -489,7 +494,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Primitive(PrimitiveType::U8));
+                function.local_types.push(Type::Primitive(PrimitiveType::U8));
                 function.code
                     .push(mk_unary(Operation::CastU8, temp_index, operand_index));
                 self.temp_count += 1;
@@ -499,7 +504,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Primitive(PrimitiveType::U16));
+                function.local_types.push(Type::Primitive(PrimitiveType::U16));
                 function.code
                     .push(mk_unary(Operation::CastU16, temp_index, operand_index));
                 self.temp_count += 1;
@@ -509,7 +514,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Primitive(PrimitiveType::U32));
+                function.local_types.push(Type::Primitive(PrimitiveType::U32));
                 function.code
                     .push(mk_unary(Operation::CastU32, temp_index, operand_index));
                 self.temp_count += 1;
@@ -519,7 +524,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Primitive(PrimitiveType::U64));
+                function.local_types.push(Type::Primitive(PrimitiveType::U64));
                 function.code
                     .push(mk_unary(Operation::CastU64, temp_index, operand_index));
                 self.temp_count += 1;
@@ -529,7 +534,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Primitive(PrimitiveType::U128));
+                function.local_types.push(Type::Primitive(PrimitiveType::U128));
                 function.code
                     .push(mk_unary(Operation::CastU128, temp_index, operand_index));
                 self.temp_count += 1;
@@ -539,7 +544,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Primitive(PrimitiveType::U256));
+                function.local_types.push(Type::Primitive(PrimitiveType::U256));
                 function.code
                     .push(mk_unary(Operation::CastU256, temp_index, operand_index));
                 self.temp_count += 1;
@@ -554,7 +559,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     &ty,
                     &VMConstant::deserialize_constant(&constant).unwrap(),
                 );
-                self.local_types.push(ty);
+                function.local_types.push(ty);
                 function.code.push(Bytecode::Load(attr_id, temp_index, value));
                 self.temp_count += 1;
             }
@@ -562,7 +567,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             MoveBytecode::LdTrue => {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Primitive(PrimitiveType::Bool));
+                function.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::Bool(true)));
                 self.temp_count += 1;
@@ -571,7 +576,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             MoveBytecode::LdFalse => {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Primitive(PrimitiveType::Bool));
+                function.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::Bool(false)));
                 self.temp_count += 1;
@@ -581,7 +586,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let signature = self.get_local_type(&view, *idx as usize);
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(signature); // same type as the value copied
+                function.local_types.push(signature); // same type as the value copied
                 function.code.push(Bytecode::Assign(
                     attr_id,
                     temp_index,
@@ -595,7 +600,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let signature = self.get_local_type(&view, *idx as usize);
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(signature); // same type as the value copied
+                function.local_types.push(signature); // same type as the value copied
                 function.code.push(Bytecode::Assign(
                     attr_id,
                     temp_index,
@@ -609,7 +614,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let signature = self.get_local_type(&view, *idx as usize);
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types
+                function.local_types
                     .push(Type::Reference(true, Box::new(signature)));
                 function.code.push(mk_unary(
                     Operation::BorrowLoc,
@@ -623,7 +628,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let signature = self.get_local_type(&view, *idx as usize);
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types
+                function.local_types
                     .push(Type::Reference(false, Box::new(signature)));
                 function.code.push(mk_unary(
                     Operation::BorrowLoc,
@@ -647,7 +652,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     let return_type = self.globalize_signature(return_type_view.signature_token());
                     return_temp_indices.push(return_temp_index);
                     self.temp_stack.push(return_temp_index);
-                    self.local_types.push(return_type);
+                    function.local_types.push(return_type);
                     self.temp_count += 1;
                 }
                 arg_temp_indices.reverse();
@@ -682,7 +687,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                         .instantiate(&type_sigs);
                     return_temp_indices.push(return_temp_index);
                     self.temp_stack.push(return_temp_index);
-                    self.local_types.push(return_type);
+                    function.local_types.push(return_type);
                     self.temp_count += 1;
                 }
                 arg_temp_indices.reverse();
@@ -710,7 +715,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 }
 
                 let struct_handle = self.module.struct_def_at(*idx).struct_handle;
-                self.local_types.push(Type::Struct(
+                function.local_types.push(Type::Struct(
                     ModuleId::new(
                         self.get_module_handle_index_of_struct(&struct_def.struct_handle),
                     ),
@@ -746,7 +751,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     let field_temp_index = self.temp_stack.pop().unwrap();
                     field_temp_indices.push(field_temp_index);
                 }
-                self.local_types.push(Type::Struct(
+                function.local_types.push(Type::Struct(
                     ModuleId::new(
                         self.get_module_handle_index_of_struct(&struct_def.struct_handle),
                     ),
@@ -793,7 +798,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     let field_temp_index = self.temp_count;
                     field_temp_indices.push(field_temp_index);
                     self.temp_stack.push(field_temp_index);
-                    self.local_types.push(self.get_type(field_data));
+                    function.local_types.push(self.get_type(field_data));
                     self.temp_count += 1;
                 }
                 function.code.push(mk_call(
@@ -839,7 +844,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     let field_temp_index = self.temp_count;
                     field_temp_indices.push(field_temp_index);
                     self.temp_stack.push(field_temp_index);
-                    self.local_types.push(field_type);
+                    function.local_types.push(field_type);
                     self.temp_count += 1;
                 }
                 function.code.push(mk_call(
@@ -857,10 +862,10 @@ impl<'a> StacklessBytecodeGenerator<'a> {
 
             MoveBytecode::ReadRef => {
                 let operand_index = self.temp_stack.pop().unwrap();
-                let operand_sig = self.local_types[operand_index].clone();
+                let operand_sig = function.local_types[operand_index].clone();
                 let temp_index = self.temp_count;
                 if let Type::Reference(_, signature) = operand_sig {
-                    self.local_types.push(*signature);
+                    function.local_types.push(*signature);
                 }
                 self.temp_stack.push(temp_index);
                 self.temp_count += 1;
@@ -890,9 +895,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             | MoveBytecode::Shr => {
                 let operand2_index = self.temp_stack.pop().unwrap();
                 let operand1_index = self.temp_stack.pop().unwrap();
-                let operand_type = self.local_types[operand1_index].clone();
+                let operand_type = function.local_types[operand1_index].clone();
                 let temp_index = self.temp_count;
-                self.local_types.push(operand_type);
+                function.local_types.push(operand_type);
                 self.temp_stack.push(temp_index);
                 self.temp_count += 1;
                 match bytecode {
@@ -983,7 +988,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand2_index = self.temp_stack.pop().unwrap();
                 let operand1_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
-                self.local_types.push(Type::Primitive(PrimitiveType::Bool));
+                function.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
                 function.code.push(mk_binary(
@@ -998,7 +1003,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand2_index = self.temp_stack.pop().unwrap();
                 let operand1_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
-                self.local_types.push(Type::Primitive(PrimitiveType::Bool));
+                function.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
                 function.code.push(mk_binary(
@@ -1012,7 +1017,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             MoveBytecode::Not => {
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
-                self.local_types.push(Type::Primitive(PrimitiveType::Bool));
+                function.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
                 function.code
@@ -1022,7 +1027,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand2_index = self.temp_stack.pop().unwrap();
                 let operand1_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
-                self.local_types.push(Type::Primitive(PrimitiveType::Bool));
+                function.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
                 function.code.push(mk_binary(
@@ -1036,7 +1041,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand2_index = self.temp_stack.pop().unwrap();
                 let operand1_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
-                self.local_types.push(Type::Primitive(PrimitiveType::Bool));
+                function.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
                 function.code.push(mk_binary(
@@ -1050,7 +1055,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand2_index = self.temp_stack.pop().unwrap();
                 let operand1_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
-                self.local_types.push(Type::Primitive(PrimitiveType::Bool));
+                function.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
                 match bytecode {
@@ -1093,7 +1098,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let struct_def = self.module.struct_def_at(*struct_index);
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
-                self.local_types.push(Type::Primitive(PrimitiveType::Bool));
+                function.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
                 function.code.push(mk_unary(
@@ -1114,7 +1119,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let struct_def = self.module.struct_def_at(struct_instantiation.def);
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
-                self.local_types.push(Type::Primitive(PrimitiveType::Bool));
+                function.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
                 function.code.push(mk_unary(
@@ -1135,7 +1140,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let is_mut = matches!(bytecode, MoveBytecode::MutBorrowGlobal(..));
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
-                self.local_types.push(Type::Reference(
+                function.local_types.push(Type::Reference(
                     is_mut,
                     Box::new(Type::Struct(
                         ModuleId::new(
@@ -1168,7 +1173,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
                 let actuals = self.get_type_params(struct_instantiation.type_parameters);
-                self.local_types.push(Type::Reference(
+                function.local_types.push(Type::Reference(
                     is_mut,
                     Box::new(Type::Struct(
                         ModuleId::new(
@@ -1198,7 +1203,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
-                self.local_types.push(Type::Struct(
+                function.local_types.push(Type::Struct(
                     ModuleId::new(
                         self.get_module_handle_index_of_struct(&struct_def.struct_handle),
                     ),
@@ -1226,7 +1231,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 let actuals = self.get_type_params(struct_instantiation.type_parameters);
-                self.local_types.push(Type::Struct(
+                function.local_types.push(Type::Struct(
                     ModuleId::new(
                         self.get_module_handle_index_of_struct(&struct_def.struct_handle),
                     ),
@@ -1290,7 +1295,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let tys = self.get_type_params(*sig);
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
-                self.local_types.push(Type::Primitive(PrimitiveType::U64));
+                function.local_types.push(Type::Primitive(PrimitiveType::U64));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
                 function.code.push(Bytecode::Call(
@@ -1311,7 +1316,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand2_index = self.temp_stack.pop().unwrap();
                 let operand1_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
-                self.local_types
+                function.local_types
                     .push(Type::Reference(is_mut, Box::new(ty.clone())));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
@@ -1340,7 +1345,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let [ty]: [Type; 1] = self.get_type_params(*sig).try_into().unwrap();
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temp_index = self.temp_count;
-                self.local_types.push(ty.clone());
+                function.local_types.push(ty.clone());
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
                 function.code.push(Bytecode::Call(
@@ -1369,7 +1374,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let [ty]: [Type; 1] = self.get_type_params(*sig).try_into().unwrap();
                 let operands = self.temp_stack.split_off(self.temp_stack.len() - n);
                 let temp_index = self.temp_count;
-                self.local_types.push(Type::Vector(Box::new(ty.clone())));
+                function.local_types.push(Type::Vector(Box::new(ty.clone())));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
 
@@ -1382,7 +1387,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 ));
                 if !operands.is_empty() {
                     let mut_ref_index = self.temp_count;
-                    self.local_types.push(Type::Reference(
+                    function.local_types.push(Type::Reference(
                         true,
                         Box::new(Type::Vector(Box::new(ty.clone()))),
                     ));
@@ -1407,13 +1412,13 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let [ty]: [Type; 1] = self.get_type_params(*sig).try_into().unwrap();
                 let operand_index = self.temp_stack.pop().unwrap();
                 let temps = (0..n).map(|idx| self.temp_count + idx).collect::<Vec<_>>();
-                self.local_types.extend(vec![ty.clone(); n]);
+                function.local_types.extend(vec![ty.clone(); n]);
                 self.temp_count += n;
                 self.temp_stack.extend(&temps);
 
                 if !temps.is_empty() {
                     let mut_ref_index = self.temp_count;
-                    self.local_types.push(Type::Reference(
+                    function.local_types.push(Type::Reference(
                         true,
                         Box::new(Type::Vector(Box::new(ty.clone()))),
                     ));
@@ -1716,6 +1721,7 @@ impl<'env> fmt::Display for StacklessBytecodeGenerator<'env> {
             let func_id = self.module_data.function_idx_to_id[idx];
             let func_define = self.module.function_def_at(*idx);
             let func_data = &self.module_data.function_data[&func_id];
+            let function = &self.functions[idx.into_index()];
             let view = FunctionDefinitionView::new(self.module, func_define);
             let modifier = if func_define.is_native() {
                 "native "
@@ -1755,7 +1761,7 @@ impl<'env> fmt::Display for StacklessBytecodeGenerator<'env> {
                 None => view.parameters().len(),
             };
             let write_decl = |f: &mut fmt::Formatter<'_>, i: TempIndex| {
-                let ty_ = &self.local_types[i];
+                let ty_ = &function.local_types[i];
                 let ty = ty_.display(&tctx);
                 if i < user_local_count {
                     write!(
@@ -1802,7 +1808,7 @@ impl<'env> fmt::Display for StacklessBytecodeGenerator<'env> {
                 writeln!(f, ";")?;
             } else {
                 writeln!(f, " {{")?;
-                for i in view.arg_tokens().count()..self.local_types.len() {
+                for i in view.arg_tokens().count()..function.local_types.len() {
                     write!(f, "     var ")?;
                     write_decl(f, i)?;
                     writeln!(f)?;

@@ -11,6 +11,6 @@ fn test_generate_bytecode() {
     let filename = PathBuf::from_str("/home/yule/Movebit/detect/build/movebit/bytecode_modules/unchecked_return.mv").unwrap();
     let cm = compile_module(filename);
     let mut bg = StacklessBytecodeGenerator::new(&cm);
-        bg.generate_function();
-        println!("{}", bg);
+    bg.generate_function();
+    println!("{}", bg);
 }
