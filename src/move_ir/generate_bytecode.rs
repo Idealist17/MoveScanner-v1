@@ -1,4 +1,3 @@
-
 use itertools::Itertools;
 use move_binary_format::{
     access::ModuleAccess,
@@ -31,7 +30,7 @@ use move_stackless_bytecode::stackless_bytecode::{
     Bytecode,
     Constant, Label, Operation,
 };
-use num::{BigUint, Num};
+use num::{BigUint, Num, ToPrimitive};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt, vec,
@@ -44,26 +43,40 @@ pub fn addr_to_big_uint(addr: &AccountAddress) -> BigUint {
     BigUint::from_str_radix(&addr.to_string(), 16).unwrap()
 }
 
-// TODO module id
-
-pub struct StacklessBytecodeGenerator<'a> {
-    pub module: &'a CompiledModule,
-    pub module_data: ModuleData,
-    pub func_define: &'a FunctionDefinition,
-    pub func_define_idx: FunctionDefinitionIndex,
-    pub temp_count: usize,
-    pub temp_stack: Vec<usize>,
-    pub local_types: Vec<Type>,
+pub struct FunctionInfo {
     pub code: Vec<Bytecode>,
     pub location_table: BTreeMap<AttrId, Loc>,
     pub loop_invariants: BTreeSet<AttrId>,
     pub fallthrough_labels: BTreeSet<Label>,
-    pub symbol_pool: SymbolPool,
-    pub reverse_struct_table: BTreeMap<(ModuleId, StructId), QualifiedSymbol>,
-    // 存放所有module name，其中ModuleId和ModuleHandleIndex在usize上一一对应
-    pub module_names: Vec<ModuleName>,
-    // vector module id
-    pub vec_module_id: ModuleId,
+}
+
+impl FunctionInfo {
+    pub fn new() -> Self {
+        FunctionInfo {
+            code: vec![],
+            location_table: BTreeMap::new(),
+            loop_invariants: BTreeSet::new(),
+            fallthrough_labels: BTreeSet::new(),
+        }
+    }
+}
+
+pub struct StacklessBytecodeGenerator<'a> {
+    pub module: &'a CompiledModule,
+    pub module_data: ModuleData,
+
+    pub temp_count: usize,
+    pub temp_stack: Vec<usize>,
+    pub local_types: Vec<Type>,
+
+    pub symbol_pool: SymbolPool, // 全局符号池，相当于globalenv的符号池
+    pub reverse_struct_table: BTreeMap<(ModuleId, StructId), QualifiedSymbol>, // 存放所有module name，其中ModuleId和ModuleHandleIndex在usize上一一对应
+    pub module_names: Vec<ModuleName>, // 所有的module handle
+
+    pub display_opt: Option<usize>,
+    pub vec_module_id: ModuleId, // vector module id
+
+    pub functions: Vec<FunctionInfo>,
 }
 
 impl<'a> StacklessBytecodeGenerator<'a> {
@@ -84,7 +97,6 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             let addr = addr_to_big_uint(move_module_id.address());
             let module_name =
                 ModuleName::new(addr, symbol_pool.make(move_module_id.name().as_str()));
-            println!("{}", module_name.display(&symbol_pool));
             // 事先找好vector的module，后面会多次使用
             if move_module_id.name().as_str() == "vector" {
                 vec_module_id_opt = Some(ModuleId::new(i));
@@ -165,90 +177,94 @@ impl<'a> StacklessBytecodeGenerator<'a> {
         StacklessBytecodeGenerator {
             module: cm,
             module_data,
-            func_define,
-            func_define_idx,
             temp_count: 0,
             temp_stack: vec![],
             local_types: vec![],
-            code: vec![],
-            location_table: BTreeMap::new(),
-            loop_invariants: BTreeSet::new(),
-            fallthrough_labels: BTreeSet::new(),
             symbol_pool: symbol_pool,
             reverse_struct_table,
             module_names,
             vec_module_id: vec_module_id_opt.unwrap(),
+            functions: vec![],
+            display_opt: None,
         }
     }
 
     pub fn generate_function(&mut self) {
-        let f = FunctionDefinitionView::new(self.module, self.func_define);
-        let local_count = match f.locals_signature() {
-            Some(locals_view) => locals_view.len(),
-            None => f.parameters().len(),
-        };
-        let local_types = (0..local_count)
-            .map(|i| self.get_local_type(&f, i))
-            .collect_vec();
-        self.temp_count = local_types.len();
-        self.local_types = local_types;
-
-        let original_code = match &self.func_define.code {
-            Some(code) => code.code.as_slice(),
-            None => &[],
-        };
-        let mut label_map = BTreeMap::new();
-        for (pos, bytecode) in original_code.iter().enumerate() {
-            if let MoveBytecode::BrTrue(code_offset)
-            | MoveBytecode::BrFalse(code_offset)
-            | MoveBytecode::Branch(code_offset) = bytecode
-            {
-                let offs = *code_offset as CodeOffset;
-                if label_map.get(&offs).is_none() {
-                    let label = Label::new(label_map.len());
-                    label_map.insert(offs, label);
-                }
-            }
-            if let MoveBytecode::BrTrue(_) | MoveBytecode::BrFalse(_) = bytecode {
-                let next_offs = (pos + 1) as CodeOffset;
-                if label_map.get(&next_offs).is_none() {
-                    let fall_through_label = Label::new(label_map.len());
-                    label_map.insert(next_offs, fall_through_label);
-                    self.fallthrough_labels.insert(fall_through_label);
-                }
+        for (idx, func_def) in self.module.function_defs.iter().enumerate() {
+            let func_def_idx = FunctionDefinitionIndex::new(idx as u16);
+            let view = FunctionDefinitionView::new(self.module, func_def);
+            let mut function = FunctionInfo::new();
+            let local_count = match view.locals_signature() {
+                Some(locals_view) => locals_view.len(),
+                None => view.parameters().len(),
             };
-        }
+            let local_types = (0..local_count)
+                .map(|i| self.get_local_type(&view, i))
+                .collect_vec();
+            self.temp_count = local_types.len();
+            self.local_types = local_types;
 
-        // Generate bytecode.
-        for (code_offset, bytecode) in original_code.iter().enumerate() {
-            self.generate_bytecode(bytecode, code_offset as CodeOffset, &label_map);
-        }
-
-        // Eliminate fall-through for non-branching instructions
-        let code = std::mem::take(&mut self.code);
-        for bytecode in code.into_iter() {
-            if let Bytecode::Label(attr_id, label) = bytecode {
-                if !self.code.is_empty() && !self.code[self.code.len() - 1].is_branch() {
-                    self.code.push(Bytecode::Jump(attr_id, label));
+            let original_code = match &func_def.code {
+                Some(code) => code.code.as_slice(),
+                None => &[],
+            };
+            let mut label_map = BTreeMap::new();
+            for (pos, bytecode) in original_code.iter().enumerate() {
+                if let MoveBytecode::BrTrue(code_offset)
+                | MoveBytecode::BrFalse(code_offset)
+                | MoveBytecode::Branch(code_offset) = bytecode
+                {
+                    let offs = *code_offset as CodeOffset;
+                    if label_map.get(&offs).is_none() {
+                        let label = Label::new(label_map.len());
+                        label_map.insert(offs, label);
+                    }
                 }
+                if let MoveBytecode::BrTrue(_) | MoveBytecode::BrFalse(_) = bytecode {
+                    let next_offs = (pos + 1) as CodeOffset;
+                    if label_map.get(&next_offs).is_none() {
+                        let fall_through_label = Label::new(label_map.len());
+                        label_map.insert(next_offs, fall_through_label);
+                        function.fallthrough_labels.insert(fall_through_label);
+                    }
+                };
             }
-            self.code.push(bytecode);
+
+            // Generate bytecode.
+            for (code_offset, bytecode) in original_code.iter().enumerate() {
+                self.generate_bytecode(func_def_idx, &view, bytecode, code_offset as CodeOffset, &label_map, &mut function);
+            }
+
+            // Eliminate fall-through for non-branching instructions
+            let code = std::mem::take(&mut function.code);
+            for bytecode in code.into_iter() {
+                if let Bytecode::Label(attr_id, label) = bytecode {
+                    if !function.code.is_empty() && !function.code[function.code.len() - 1].is_branch() {
+                        function.code.push(Bytecode::Jump(attr_id, label));
+                    }
+                }
+                function.code.push(bytecode);
+            }
+            self.functions.push(function);
         }
     }
 
     pub fn generate_bytecode(
         &mut self,
+        func_def_idx: FunctionDefinitionIndex,
+        view: &FunctionDefinitionView<'_, CompiledModule>,
         bytecode: &MoveBytecode,
         code_offset: CodeOffset,
         label_map: &BTreeMap<CodeOffset, Label>,
+        function: &mut FunctionInfo,
     ) {
         // Add label if defined at this code offset.
         if let Some(label) = label_map.get(&code_offset) {
-            let label_attr_id = self.new_loc_attr(code_offset);
-            self.code.push(Bytecode::Label(label_attr_id, *label));
+            let label_attr_id = self.new_loc_attr(func_def_idx, function, code_offset);
+            function.code.push(Bytecode::Label(label_attr_id, *label));
         }
 
-        let attr_id = self.new_loc_attr(code_offset);
+        let attr_id = self.new_loc_attr(func_def_idx, function, code_offset);
 
         let mk_vec_function_operation = |name: &str, tys: Vec<Type>| -> Operation {
             let vec_fun = FunId::new(self.symbol_pool.make(name));
@@ -264,19 +280,16 @@ impl<'a> StacklessBytecodeGenerator<'a> {
         let mk_binary = |op: Operation, dst: usize, src1: usize, src2: usize| -> Bytecode {
             Bytecode::Call(attr_id, vec![dst], op, vec![src1, src2], None)
         };
-
-        let f = FunctionDefinitionView::new(self.module, self.func_define);
-        let view = &BinaryIndexedView::Module(&self.module);
-
+        
         match bytecode {
             MoveBytecode::Pop => {
                 let temp_index = self.temp_stack.pop().unwrap();
-                self.code
+                function.code
                     .push(mk_call(Operation::Destroy, vec![], vec![temp_index]));
             }
             MoveBytecode::BrTrue(target) => {
                 let temp_index = self.temp_stack.pop().unwrap();
-                self.code.push(Bytecode::Branch(
+                function.code.push(Bytecode::Branch(
                     attr_id,
                     *label_map.get(target).unwrap(),
                     *label_map.get(&(code_offset + 1)).unwrap(),
@@ -286,7 +299,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
 
             MoveBytecode::BrFalse(target) => {
                 let temp_index = self.temp_stack.pop().unwrap();
-                self.code.push(Bytecode::Branch(
+                function.code.push(Bytecode::Branch(
                     attr_id,
                     *label_map.get(&(code_offset + 1)).unwrap(),
                     *label_map.get(target).unwrap(),
@@ -296,12 +309,12 @@ impl<'a> StacklessBytecodeGenerator<'a> {
 
             MoveBytecode::Abort => {
                 let error_code_index = self.temp_stack.pop().unwrap();
-                self.code.push(Bytecode::Abort(attr_id, error_code_index));
+                function.code.push(Bytecode::Abort(attr_id, error_code_index));
             }
 
             MoveBytecode::StLoc(idx) => {
                 let operand_index = self.temp_stack.pop().unwrap();
-                self.code.push(Bytecode::Assign(
+                function.code.push(Bytecode::Assign(
                     attr_id,
                     *idx as TempIndex,
                     operand_index,
@@ -311,13 +324,13 @@ impl<'a> StacklessBytecodeGenerator<'a> {
 
             MoveBytecode::Ret => {
                 let mut return_temps = vec![];
-                for _ in 0..f.return_().len() {
+                for _ in 0..view.return_().len() {
                     // OK
                     let return_temp_index = self.temp_stack.pop().unwrap();
                     return_temps.push(return_temp_index);
                 }
                 return_temps.reverse();
-                self.code.push(Bytecode::Ret(attr_id, return_temps));
+                function.code.push(Bytecode::Ret(attr_id, return_temps));
             }
 
             MoveBytecode::Branch(target) => {
@@ -325,17 +338,17 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 // and replace it with `if c goto L1 else L3`, provided L2 is a fall-through
                 // label, i.e. not referenced from elsewhere.
                 let target_label = *label_map.get(target).unwrap();
-                let at = self.code.len();
+                let at = function.code.len();
                 let rewritten = if at >= 2 {
-                    match (&self.code[at - 2], &self.code[at - 1]) {
+                    match (&function.code[at - 2], &function.code[at - 1]) {
                         (
                             Bytecode::Branch(attr, if_true, if_false, c),
                             Bytecode::Label(_, cont),
-                        ) if self.fallthrough_labels.contains(cont) && if_false == cont => {
+                        ) if function.fallthrough_labels.contains(cont) && if_false == cont => {
                             let bc = Bytecode::Branch(*attr, *if_true, target_label, *c);
-                            self.code.pop();
-                            self.code.pop();
-                            self.code.push(bc);
+                            function.code.pop();
+                            function.code.pop();
+                            function.code.push(bc);
                             true
                         }
                         _ => false,
@@ -344,7 +357,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     false
                 };
                 if !rewritten {
-                    self.code.push(Bytecode::Jump(attr_id, target_label));
+                    function.code.push(Bytecode::Jump(attr_id, target_label));
                 }
             }
 
@@ -356,7 +369,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                         let immutable_ref_index = self.temp_count;
                         self.temp_stack.push(immutable_ref_index);
                         self.local_types.push(Type::Reference(false, signature));
-                        self.code.push(mk_call(
+                        function.code.push(mk_call(
                             Operation::FreezeRef,
                             vec![immutable_ref_index],
                             vec![mutable_ref_index],
@@ -375,7 +388,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     self.get_field_info(*field_handle_index);
                 let field_ref_index = self.temp_count;
                 self.temp_stack.push(field_ref_index);
-                self.code.push(mk_call(
+                function.code.push(mk_call(
                     Operation::BorrowField(
                         ModuleId::new(
                             self.get_module_handle_index_of_struct(&struct_def.struct_handle),
@@ -405,7 +418,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let field_type = base_field_type.instantiate(&actuals);
                 let field_ref_index = self.temp_count;
                 self.temp_stack.push(field_ref_index);
-                self.code.push(mk_call(
+                function.code.push(mk_call(
                     Operation::BorrowField(
                         ModuleId::new(
                             self.get_module_handle_index_of_struct(&struct_def.struct_handle),
@@ -427,7 +440,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Primitive(PrimitiveType::U8));
-                self.code
+                function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::U8(*number)));
                 self.temp_count += 1;
             }
@@ -436,7 +449,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Primitive(PrimitiveType::U16));
-                self.code
+                function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::U16(*number)));
                 self.temp_count += 1;
             }
@@ -445,7 +458,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Primitive(PrimitiveType::U32));
-                self.code
+                function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::U32(*number)));
                 self.temp_count += 1;
             }
@@ -454,7 +467,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Primitive(PrimitiveType::U64));
-                self.code
+                function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::U64(*number)));
                 self.temp_count += 1;
             }
@@ -463,7 +476,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Primitive(PrimitiveType::U256));
-                self.code
+                function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::from(number)));
                 self.temp_count += 1;
             }
@@ -472,7 +485,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Primitive(PrimitiveType::U128));
-                self.code
+                function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::U128(*number)));
                 self.temp_count += 1;
             }
@@ -482,7 +495,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Primitive(PrimitiveType::U8));
-                self.code
+                function.code
                     .push(mk_unary(Operation::CastU8, temp_index, operand_index));
                 self.temp_count += 1;
             }
@@ -492,7 +505,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Primitive(PrimitiveType::U16));
-                self.code
+                function.code
                     .push(mk_unary(Operation::CastU16, temp_index, operand_index));
                 self.temp_count += 1;
             }
@@ -502,7 +515,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Primitive(PrimitiveType::U32));
-                self.code
+                function.code
                     .push(mk_unary(Operation::CastU32, temp_index, operand_index));
                 self.temp_count += 1;
             }
@@ -512,7 +525,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Primitive(PrimitiveType::U64));
-                self.code
+                function.code
                     .push(mk_unary(Operation::CastU64, temp_index, operand_index));
                 self.temp_count += 1;
             }
@@ -522,7 +535,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Primitive(PrimitiveType::U128));
-                self.code
+                function.code
                     .push(mk_unary(Operation::CastU128, temp_index, operand_index));
                 self.temp_count += 1;
             }
@@ -532,7 +545,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Primitive(PrimitiveType::U256));
-                self.code
+                function.code
                     .push(mk_unary(Operation::CastU256, temp_index, operand_index));
                 self.temp_count += 1;
             }
@@ -547,7 +560,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     &VMConstant::deserialize_constant(&constant).unwrap(),
                 );
                 self.local_types.push(ty);
-                self.code.push(Bytecode::Load(attr_id, temp_index, value));
+                function.code.push(Bytecode::Load(attr_id, temp_index, value));
                 self.temp_count += 1;
             }
 
@@ -555,7 +568,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Primitive(PrimitiveType::Bool));
-                self.code
+                function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::Bool(true)));
                 self.temp_count += 1;
             }
@@ -564,17 +577,17 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(Type::Primitive(PrimitiveType::Bool));
-                self.code
+                function.code
                     .push(Bytecode::Load(attr_id, temp_index, Constant::Bool(false)));
                 self.temp_count += 1;
             }
 
             MoveBytecode::CopyLoc(idx) => {
-                let signature = self.get_local_type(&f, *idx as usize);
+                let signature = self.get_local_type(&view, *idx as usize);
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(signature); // same type as the value copied
-                self.code.push(Bytecode::Assign(
+                function.code.push(Bytecode::Assign(
                     attr_id,
                     temp_index,
                     *idx as TempIndex,
@@ -584,11 +597,11 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             }
 
             MoveBytecode::MoveLoc(idx) => {
-                let signature = self.get_local_type(&f, *idx as usize);
+                let signature = self.get_local_type(&view, *idx as usize);
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types.push(signature); // same type as the value copied
-                self.code.push(Bytecode::Assign(
+                function.code.push(Bytecode::Assign(
                     attr_id,
                     temp_index,
                     *idx as TempIndex,
@@ -598,12 +611,12 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             }
 
             MoveBytecode::MutBorrowLoc(idx) => {
-                let signature = self.get_local_type(&f, *idx as usize);
+                let signature = self.get_local_type(&view, *idx as usize);
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types
                     .push(Type::Reference(true, Box::new(signature)));
-                self.code.push(mk_unary(
+                function.code.push(mk_unary(
                     Operation::BorrowLoc,
                     temp_index,
                     *idx as TempIndex,
@@ -612,12 +625,12 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             }
 
             MoveBytecode::ImmBorrowLoc(idx) => {
-                let signature = self.get_local_type(&f, *idx as usize);
+                let signature = self.get_local_type(&view, *idx as usize);
                 let temp_index = self.temp_count;
                 self.temp_stack.push(temp_index);
                 self.local_types
                     .push(Type::Reference(false, Box::new(signature)));
-                self.code.push(mk_unary(
+                function.code.push(mk_unary(
                     Operation::BorrowLoc,
                     temp_index,
                     *idx as TempIndex,
@@ -643,7 +656,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     self.temp_count += 1;
                 }
                 arg_temp_indices.reverse();
-                self.code.push(mk_call(
+                function.code.push(mk_call(
                     Operation::Function(
                         ModuleId::new(self.get_module_handle_index_of_func(idx)),
                         self.get_fun_id_by_idx(idx),
@@ -678,7 +691,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     self.temp_count += 1;
                 }
                 arg_temp_indices.reverse();
-                self.code.push(mk_call(
+                function.code.push(mk_call(
                     Operation::Function(
                         ModuleId::new(
                             self.get_module_handle_index_of_func(&func_instantiation.handle),
@@ -694,8 +707,8 @@ impl<'a> StacklessBytecodeGenerator<'a> {
             MoveBytecode::Pack(idx) => {
                 let mut field_temp_indices = vec![];
                 let struct_temp_index = self.temp_count;
-
-                let struct_def = view.struct_def_at(*idx).unwrap();
+                
+                let struct_def = self.module.struct_def_at(*idx);
                 for _ in 0..struct_def.declared_field_count().unwrap() {
                     let field_temp_index = self.temp_stack.pop().unwrap();
                     field_temp_indices.push(field_temp_index);
@@ -711,7 +724,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 ));
                 self.temp_stack.push(struct_temp_index);
                 field_temp_indices.reverse();
-                self.code.push(mk_call(
+                function.code.push(mk_call(
                     Operation::Pack(
                         ModuleId::new(
                             self.get_module_handle_index_of_struct(&struct_def.struct_handle),
@@ -732,7 +745,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let struct_temp_index = self.temp_count;
 
                 let struct_handle = self.module.struct_instantiation_at(*idx);
-                let struct_def = view.struct_def_at(struct_handle.def).unwrap();
+                let struct_def = self.module.struct_def_at(struct_handle.def);
                 let count = struct_def.declared_field_count().unwrap();
                 for _ in 0..count {
                     let field_temp_index = self.temp_stack.pop().unwrap();
@@ -747,7 +760,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 ));
                 self.temp_stack.push(struct_temp_index);
                 field_temp_indices.reverse();
-                self.code.push(mk_call(
+                function.code.push(mk_call(
                     Operation::Pack(
                         ModuleId::new(
                             self.get_module_handle_index_of_struct(&struct_def.struct_handle),
@@ -788,7 +801,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     self.local_types.push(self.get_type(field_data));
                     self.temp_count += 1;
                 }
-                self.code.push(mk_call(
+                function.code.push(mk_call(
                     Operation::Unpack(
                         ModuleId::new(
                             self.get_module_handle_index_of_struct(&struct_def.struct_handle),
@@ -806,9 +819,9 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let actuals = self.get_type_params(struct_instantiation.type_parameters);
                 let mut field_temp_indices = vec![];
                 let struct_temp_index = self.temp_stack.pop().unwrap();
-                let struct_def_id = view.struct_instantiation_at(*idx).unwrap().def;
+                let struct_def_id = self.module.struct_instantiation_at(*idx).def;
                 let struct_handle = self.module.struct_instantiation_at(*idx);
-                let struct_def = view.struct_def_at(struct_handle.def).unwrap();
+                let struct_def = self.module.struct_def_at(struct_handle.def);
 
                 let name = self
                     .module
@@ -834,7 +847,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     self.local_types.push(field_type);
                     self.temp_count += 1;
                 }
-                self.code.push(mk_call(
+                function.code.push(mk_call(
                     Operation::Unpack(
                         ModuleId::new(
                             self.get_module_handle_index_of_struct(&struct_def.struct_handle),
@@ -856,14 +869,14 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 }
                 self.temp_stack.push(temp_index);
                 self.temp_count += 1;
-                self.code
+                function.code
                     .push(mk_unary(Operation::ReadRef, temp_index, operand_index));
             }
 
             MoveBytecode::WriteRef => {
                 let ref_operand_index = self.temp_stack.pop().unwrap();
                 let val_operand_index = self.temp_stack.pop().unwrap();
-                self.code.push(mk_call(
+                function.code.push(mk_call(
                     Operation::WriteRef,
                     vec![],
                     vec![ref_operand_index, val_operand_index],
@@ -889,7 +902,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.temp_count += 1;
                 match bytecode {
                     MoveBytecode::Add => {
-                        self.code.push(mk_binary(
+                        function.code.push(mk_binary(
                             Operation::Add,
                             temp_index,
                             operand1_index,
@@ -897,7 +910,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                         ));
                     }
                     MoveBytecode::Sub => {
-                        self.code.push(mk_binary(
+                        function.code.push(mk_binary(
                             Operation::Sub,
                             temp_index,
                             operand1_index,
@@ -905,7 +918,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                         ));
                     }
                     MoveBytecode::Mul => {
-                        self.code.push(mk_binary(
+                        function.code.push(mk_binary(
                             Operation::Mul,
                             temp_index,
                             operand1_index,
@@ -913,7 +926,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                         ));
                     }
                     MoveBytecode::Mod => {
-                        self.code.push(mk_binary(
+                        function.code.push(mk_binary(
                             Operation::Mod,
                             temp_index,
                             operand1_index,
@@ -921,7 +934,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                         ));
                     }
                     MoveBytecode::Div => {
-                        self.code.push(mk_binary(
+                        function.code.push(mk_binary(
                             Operation::Div,
                             temp_index,
                             operand1_index,
@@ -929,7 +942,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                         ));
                     }
                     MoveBytecode::BitOr => {
-                        self.code.push(mk_binary(
+                        function.code.push(mk_binary(
                             Operation::BitOr,
                             temp_index,
                             operand1_index,
@@ -937,7 +950,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                         ));
                     }
                     MoveBytecode::BitAnd => {
-                        self.code.push(mk_binary(
+                        function.code.push(mk_binary(
                             Operation::BitAnd,
                             temp_index,
                             operand1_index,
@@ -945,7 +958,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                         ));
                     }
                     MoveBytecode::Xor => {
-                        self.code.push(mk_binary(
+                        function.code.push(mk_binary(
                             Operation::Xor,
                             temp_index,
                             operand1_index,
@@ -953,7 +966,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                         ));
                     }
                     MoveBytecode::Shl => {
-                        self.code.push(mk_binary(
+                        function.code.push(mk_binary(
                             Operation::Shl,
                             temp_index,
                             operand1_index,
@@ -961,7 +974,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                         ));
                     }
                     MoveBytecode::Shr => {
-                        self.code.push(mk_binary(
+                        function.code.push(mk_binary(
                             Operation::Shr,
                             temp_index,
                             operand1_index,
@@ -978,7 +991,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
-                self.code.push(mk_binary(
+                function.code.push(mk_binary(
                     Operation::Or,
                     temp_index,
                     operand1_index,
@@ -993,7 +1006,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
-                self.code.push(mk_binary(
+                function.code.push(mk_binary(
                     Operation::And,
                     temp_index,
                     operand1_index,
@@ -1007,7 +1020,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
-                self.code
+                function.code
                     .push(mk_unary(Operation::Not, temp_index, operand_index));
             }
             MoveBytecode::Eq => {
@@ -1017,7 +1030,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
-                self.code.push(mk_binary(
+                function.code.push(mk_binary(
                     Operation::Eq,
                     temp_index,
                     operand1_index,
@@ -1031,7 +1044,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
-                self.code.push(mk_binary(
+                function.code.push(mk_binary(
                     Operation::Neq,
                     temp_index,
                     operand1_index,
@@ -1047,7 +1060,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.temp_stack.push(temp_index);
                 match bytecode {
                     MoveBytecode::Lt => {
-                        self.code.push(mk_binary(
+                        function.code.push(mk_binary(
                             Operation::Lt,
                             temp_index,
                             operand1_index,
@@ -1055,7 +1068,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                         ));
                     }
                     MoveBytecode::Gt => {
-                        self.code.push(mk_binary(
+                        function.code.push(mk_binary(
                             Operation::Gt,
                             temp_index,
                             operand1_index,
@@ -1063,7 +1076,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                         ));
                     }
                     MoveBytecode::Le => {
-                        self.code.push(mk_binary(
+                        function.code.push(mk_binary(
                             Operation::Le,
                             temp_index,
                             operand1_index,
@@ -1071,7 +1084,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                         ));
                     }
                     MoveBytecode::Ge => {
-                        self.code.push(mk_binary(
+                        function.code.push(mk_binary(
                             Operation::Ge,
                             temp_index,
                             operand1_index,
@@ -1088,7 +1101,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
-                self.code.push(mk_unary(
+                function.code.push(mk_unary(
                     Operation::Exists(
                         ModuleId::new(
                             self.get_module_handle_index_of_struct(&struct_def.struct_handle),
@@ -1109,7 +1122,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.local_types.push(Type::Primitive(PrimitiveType::Bool));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
-                self.code.push(mk_unary(
+                function.code.push(mk_unary(
                     Operation::Exists(
                         ModuleId::new(
                             self.get_module_handle_index_of_struct(&struct_def.struct_handle),
@@ -1139,7 +1152,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 ));
                 self.temp_stack.push(temp_index);
                 self.temp_count += 1;
-                self.code.push(mk_unary(
+                function.code.push(mk_unary(
                     Operation::BorrowGlobal(
                         ModuleId::new(
                             self.get_module_handle_index_of_struct(&struct_def.struct_handle),
@@ -1172,7 +1185,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 ));
                 self.temp_stack.push(temp_index);
                 self.temp_count += 1;
-                self.code.push(mk_unary(
+                function.code.push(mk_unary(
                     Operation::BorrowGlobal(
                         ModuleId::new(
                             self.get_module_handle_index_of_struct(&struct_def.struct_handle),
@@ -1198,7 +1211,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     vec![],
                 ));
                 self.temp_count += 1;
-                self.code.push(mk_unary(
+                function.code.push(mk_unary(
                     Operation::MoveFrom(
                         ModuleId::new(
                             self.get_module_handle_index_of_struct(&struct_def.struct_handle),
@@ -1226,7 +1239,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     actuals.clone(),
                 ));
                 self.temp_count += 1;
-                self.code.push(mk_unary(
+                function.code.push(mk_unary(
                     Operation::MoveFrom(
                         ModuleId::new(
                             self.get_module_handle_index_of_struct(&struct_def.struct_handle),
@@ -1243,7 +1256,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let struct_def = self.module.struct_def_at(*idx);
                 let value_operand_index = self.temp_stack.pop().unwrap();
                 let signer_operand_index = self.temp_stack.pop().unwrap();
-                self.code.push(mk_call(
+                function.code.push(mk_call(
                     Operation::MoveTo(
                         ModuleId::new(
                             self.get_module_handle_index_of_struct(&struct_def.struct_handle),
@@ -1261,7 +1274,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let struct_def = self.module.struct_def_at(struct_instantiation.def);
                 let value_operand_index = self.temp_stack.pop().unwrap();
                 let signer_operand_index = self.temp_stack.pop().unwrap();
-                self.code.push(mk_call(
+                function.code.push(mk_call(
                     Operation::MoveTo(
                         ModuleId::new(
                             self.get_module_handle_index_of_struct(&struct_def.struct_handle),
@@ -1274,7 +1287,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 ));
             }
 
-            MoveBytecode::Nop => self.code.push(Bytecode::Nop(attr_id)),
+            MoveBytecode::Nop => function.code.push(Bytecode::Nop(attr_id)),
 
             // TODO full prover support for vector bytecode instructions
             // These should go to non-functional call operations
@@ -1285,7 +1298,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.local_types.push(Type::Primitive(PrimitiveType::U64));
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
-                self.code.push(Bytecode::Call(
+                function.code.push(Bytecode::Call(
                     attr_id,
                     vec![temp_index],
                     mk_vec_function_operation("length", tys),
@@ -1308,7 +1321,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
                 let vec_fun = if is_mut { "borrow_mut" } else { "borrow" };
-                self.code.push(Bytecode::Call(
+                function.code.push(Bytecode::Call(
                     attr_id,
                     vec![temp_index],
                     mk_vec_function_operation(vec_fun, vec![ty]),
@@ -1320,7 +1333,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let tys = self.get_type_params(*sig);
                 let operand2_index = self.temp_stack.pop().unwrap();
                 let operand1_index = self.temp_stack.pop().unwrap();
-                self.code.push(Bytecode::Call(
+                function.code.push(Bytecode::Call(
                     attr_id,
                     vec![],
                     mk_vec_function_operation("push_back", tys),
@@ -1335,7 +1348,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.local_types.push(ty.clone());
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
-                self.code.push(Bytecode::Call(
+                function.code.push(Bytecode::Call(
                     attr_id,
                     vec![temp_index],
                     mk_vec_function_operation("pop_back", vec![ty]),
@@ -1348,7 +1361,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 let operand3_index = self.temp_stack.pop().unwrap();
                 let operand2_index = self.temp_stack.pop().unwrap();
                 let operand1_index = self.temp_stack.pop().unwrap();
-                self.code.push(Bytecode::Call(
+                function.code.push(Bytecode::Call(
                     attr_id,
                     vec![],
                     mk_vec_function_operation("swap", tys),
@@ -1365,7 +1378,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                 self.temp_count += 1;
                 self.temp_stack.push(temp_index);
 
-                self.code.push(Bytecode::Call(
+                function.code.push(Bytecode::Call(
                     attr_id,
                     vec![temp_index],
                     mk_vec_function_operation("empty", vec![ty.clone()]),
@@ -1380,11 +1393,11 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     ));
                     self.temp_count += 1;
 
-                    self.code
+                    function.code
                         .push(mk_unary(Operation::BorrowLoc, mut_ref_index, temp_index));
 
                     for operand in operands {
-                        self.code.push(Bytecode::Call(
+                        function.code.push(Bytecode::Call(
                             attr_id,
                             vec![],
                             mk_vec_function_operation("push_back", vec![ty.clone()]),
@@ -1411,11 +1424,11 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     ));
                     self.temp_count += 1;
 
-                    self.code
+                    function.code
                         .push(mk_unary(Operation::BorrowLoc, mut_ref_index, operand_index));
 
                     for temp in temps {
-                        self.code.push(Bytecode::Call(
+                        function.code.push(Bytecode::Call(
                             attr_id,
                             vec![temp],
                             mk_vec_function_operation("pop_back", vec![ty.clone()]),
@@ -1425,7 +1438,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
                     }
                 }
 
-                self.code.push(Bytecode::Call(
+                function.code.push(Bytecode::Call(
                     attr_id,
                     vec![],
                     mk_vec_function_operation("destroy_empty", vec![ty]),
@@ -1437,15 +1450,15 @@ impl<'a> StacklessBytecodeGenerator<'a> {
     }
 
     /// Create a new attribute id and populate location table.
-    fn new_loc_attr(&mut self, code_offset: CodeOffset) -> AttrId {
-        let loc = self.get_bytecode_loc(code_offset);
-        let attr = AttrId::new(self.location_table.len());
-        self.location_table.insert(attr, loc);
+    fn new_loc_attr(&mut self, func_def_idx: FunctionDefinitionIndex, function: &mut FunctionInfo, code_offset: CodeOffset) -> AttrId {
+        let loc = self.get_bytecode_loc(func_def_idx, code_offset);
+        let attr = AttrId::new(function.location_table.len());
+        function.location_table.insert(attr, loc);
         attr
     }
 
-    pub fn get_bytecode_loc(&self, _: u16) -> Loc {
-        let func_id = self.module_data.function_idx_to_id[&self.func_define_idx];
+    pub fn get_bytecode_loc(&self, func_def_idx: FunctionDefinitionIndex, _: u16) -> Loc {
+        let func_id = self.module_data.function_idx_to_id[&func_def_idx];
         let func_data = &self.module_data.function_data[&func_id];
         func_data.loc.clone()
     }
@@ -1586,8 +1599,12 @@ impl<'a> StacklessBytecodeGenerator<'a> {
         }
     }
 
-    pub fn get_local_name(&self, idx: usize) -> Symbol {
-        let func_id = self.module_data.function_idx_to_id[&self.func_define_idx];
+    pub fn set_display_option(&mut self, idx: usize) {
+        self.display_opt = Some(idx);
+    }
+
+    pub fn get_local_name(&self, func_def_idx: FunctionDefinitionIndex, idx: usize) -> Symbol {
+        let func_id = self.module_data.function_idx_to_id[&func_def_idx];
         let func_data = &self.module_data.function_data[&func_id];
         if idx < func_data.arg_names.len() {
             return func_data.arg_names[idx as usize];
@@ -1596,7 +1613,7 @@ impl<'a> StacklessBytecodeGenerator<'a> {
         if let Ok(fmap) = self
             .module_data
             .source_map
-            .get_function_source_map(self.func_define_idx)
+            .get_function_source_map(func_def_idx)
         {
             if let Some((ident, _)) = fmap.get_parameter_or_local_name(idx as u64) {
                 // The Move compiler produces temporary names of the form `<foo>%#<num>`,
@@ -1692,112 +1709,123 @@ pub fn create_move_struct_data(
 
 impl<'env> fmt::Display for StacklessBytecodeGenerator<'env> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let func_id = self.module_data.function_idx_to_id[&self.func_define_idx];
-        let func_data = &self.module_data.function_data[&func_id];
-        let view = FunctionDefinitionView::new(self.module, self.func_define);
-        let modifier = if self.func_define.is_native() {
-            "native "
-        } else {
-            ""
-        };
-        write!(
-            f,
-            "{}{}fun {}::{}",
-            utils::visibility_str(&self.func_define.visibility),
-            modifier,
-            self.module_data.name.display(&self.symbol_pool),
-            func_data.name.display(&self.symbol_pool)
-        )?;
-        // ghost_type_param_count?
-        let tparams_count_all = view.type_parameters().len() + 0;
-        let tparams_count_defined = view.type_parameters().len();
-        if tparams_count_all != 0 {
-            write!(f, "<")?;
-            for i in 0..tparams_count_all {
-                if i > 0 {
-                    write!(f, ", ")?;
-                }
-                write!(f, "#{}", i)?;
-                if i >= tparams_count_defined {
-                    write!(f, "*")?; // denotes a ghost type parameter
-                }
+        let mut idxs = vec![];
+        if let Some(idx) = self.display_opt { // display idx function
+            idxs.push(FunctionDefinitionIndex::new(idx as u16));
+        } else { // display all functions
+            for idx in 0..self.functions.len() {
+                idxs.push(FunctionDefinitionIndex::new(idx as u16));
             }
-            write!(f, ">")?;
         }
-        let tctx = TypeDisplayContext::WithoutEnv {
-            symbol_pool: &self.symbol_pool,
-            reverse_struct_table: &self.reverse_struct_table,
-        };
-        let user_local_count = match view.locals_signature() {
-            Some(locals_view) => locals_view.len(),
-            None => view.parameters().len(),
-        };
-        let write_decl = |f: &mut fmt::Formatter<'_>, i: TempIndex| {
-            let ty_ = &self.local_types[i];
-            let ty = ty_.display(&tctx);
-            if i < user_local_count {
-                write!(
-                    f,
-                    "$t{}|{}: {}",
-                    i,
-                    self.get_local_name(i).display(&self.symbol_pool),
-                    ty
-                )
+        for idx in idxs.iter() {
+            let func_id = self.module_data.function_idx_to_id[idx];
+            let func_define = self.module.function_def_at(*idx);
+            let func_data = &self.module_data.function_data[&func_id];
+            let view = FunctionDefinitionView::new(self.module, func_define);
+            let modifier = if func_define.is_native() {
+                "native "
             } else {
-                write!(f, "$t{}: {}", i, ty)
+                ""
+            };
+            write!(
+                f,
+                "{}{}fun {}::{}",
+                utils::visibility_str(&func_define.visibility),
+                modifier,
+                self.module_data.name.display(&self.symbol_pool),
+                func_data.name.display(&self.symbol_pool)
+            )?;
+            // ghost_type_param_count?
+            let tparams_count_all = view.type_parameters().len() + 0;
+            let tparams_count_defined = view.type_parameters().len();
+            if tparams_count_all != 0 {
+                write!(f, "<")?;
+                for i in 0..tparams_count_all {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "#{}", i)?;
+                    if i >= tparams_count_defined {
+                        write!(f, "*")?; // denotes a ghost type parameter
+                    }
+                }
+                write!(f, ">")?;
             }
-        };
-        write!(f, "(")?;
+            let tctx = TypeDisplayContext::WithoutEnv {
+                symbol_pool: &self.symbol_pool,
+                reverse_struct_table: &self.reverse_struct_table,
+            };
+            let user_local_count = match view.locals_signature() {
+                Some(locals_view) => locals_view.len(),
+                None => view.parameters().len(),
+            };
+            let write_decl = |f: &mut fmt::Formatter<'_>, i: TempIndex| {
+                let ty_ = &self.local_types[i];
+                let ty = ty_.display(&tctx);
+                if i < user_local_count {
+                    write!(
+                        f,
+                        "$t{}|{}: {}",
+                        i,
+                        self.get_local_name(*idx, i).display(&self.symbol_pool),
+                        ty
+                    )
+                } else {
+                    write!(f, "$t{}: {}", i, ty)
+                }
+            };
+            write!(f, "(")?;
 
-        for i in 0..view.arg_tokens().count() {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write_decl(f, i)?;
-        }
-        write!(f, ")")?;
-        if view.return_count() > 0 {
-            write!(f, ": ")?;
-            if view.return_count() > 1 {
-                write!(f, "(")?;
-            }
-            let returns = &view.return_().0;
-            for i in 0..view.return_count() {
+            for i in 0..view.arg_tokens().count() {
                 if i > 0 {
                     write!(f, ", ")?;
                 }
-                write!(
-                    f,
-                    "{}",
-                    self.globalize_signature(&returns[i]).display(&tctx)
-                )?;
-            }
-            if view.return_count() > 1 {
-                write!(f, ")")?;
-            }
-        }
-        if self.func_define.is_native() {
-            writeln!(f, ";")?;
-        } else {
-            writeln!(f, " {{")?;
-            for i in view.arg_tokens().count()..self.local_types.len() {
-                write!(f, "     var ")?;
                 write_decl(f, i)?;
-                writeln!(f)?;
             }
+            write!(f, ")")?;
+            if view.return_count() > 0 {
+                write!(f, ": ")?;
+                if view.return_count() > 1 {
+                    write!(f, "(")?;
+                }
+                let returns = &view.return_().0;
+                for i in 0..view.return_count() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(
+                        f,
+                        "{}",
+                        self.globalize_signature(&returns[i]).display(&tctx)
+                    )?;
+                }
+                if view.return_count() > 1 {
+                    write!(f, ")")?;
+                }
+            }
+            if func_define.is_native() {
+                writeln!(f, ";")?;
+            } else {
+                writeln!(f, " {{")?;
+                for i in view.arg_tokens().count()..self.local_types.len() {
+                    write!(f, "     var ")?;
+                    write_decl(f, i)?;
+                    writeln!(f)?;
+                }
 
-            let bytecodes = self.code.clone();
-            let label_offsets = Bytecode::label_offsets(&bytecodes);
-            for (offset, code) in bytecodes.iter().enumerate() {
-                writeln!(
-                    f,
-                    "{:>3}: {}",
-                    offset,
-                    bytecode_display::display(code, &label_offsets, &self)
-                )
-                .unwrap();
+                let bytecodes = self.functions[idx.into_index()].code.clone();
+                let label_offsets = Bytecode::label_offsets(&bytecodes);
+                for (offset, code) in bytecodes.iter().enumerate() {
+                    writeln!(
+                        f,
+                        "{:>3}: {}",
+                        offset,
+                        bytecode_display::display(code, &label_offsets, &self)
+                    )
+                    .unwrap();
+                }
+                writeln!(f, "}}")?;
             }
-            writeln!(f, "}}")?;
         }
         Ok(())
     }

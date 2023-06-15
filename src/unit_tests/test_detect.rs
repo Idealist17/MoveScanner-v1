@@ -1,30 +1,24 @@
-use crate::move_ir::sbir_generator::*;
-use crate::detect::detect::{detect_unchecked_return, 
-    detect_unused_private_functions,
-    detect_unused_constants,
+use std::path::PathBuf;
+use std::str::FromStr;
+use crate::move_ir::{
+    bytecode_display, 
+    generate_bytecode::StacklessBytecodeGenerator
 };
+use crate::utils::utils::compile_module;
+use crate::detect::detect1::detect_unchecked_return;
+
 
 #[test]
-fn test_get_from_bytecode_modules() {
-    let dir = "./testdata/examples_mv/aptos/";
-    let bc = Blockchain::Aptos;
-    let ms = MoveScanner::new(dir, bc);
-
-    // unchecked return
-    for (_, func) in &ms.functions {
-        if detect_unchecked_return(&func) {
-            println!("{}", func.module_name.display(ms.env.symbol_pool()));
-            println!("{}", func.name.display(ms.env.symbol_pool()));
+fn test_detect_unchecked_return() {
+    let filename = PathBuf::from_str("/Users/lteng/Movebit/detect/build/movebit/bytecode_modules/unchecked_return.mv").unwrap();
+    let cm = compile_module(filename);
+    for fd in &cm.function_defs {
+        let mut stbgr = StacklessBytecodeGenerator::new(&cm, fd);
+        stbgr.generate_function();
+        for function in stbgr.functions.iter() {
+            if detect_unchecked_return(function) {
+                println!("{}", "111");
+            }
         }
     }
-
-    // unused private function
-    let unused_private_functions = detect_unused_private_functions(&ms);
-    for fun in unused_private_functions {
-        let fname = ms.env.get_function(*fun).get_full_name_str();
-        println!("Unused Private function: {}", fname);
-    }
-
-    // unused constant
-    detect_unused_constants(&ms);
 }
