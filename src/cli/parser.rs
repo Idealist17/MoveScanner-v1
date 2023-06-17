@@ -6,8 +6,9 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
 
-    #[clap(short = 'f', long, default_value_t = ("./testdata/examples_mv/aptos/").to_string(), help = "The project under this dir will be analyzed")]
+    #[clap(short = 'f', long, default_value_t = ("/home/yule/Movebit/detect/sources/unchecked_return.move").to_string(), help = "The project under this dir will be analyzed")]
     pub filedir: String,
+
 }
 
 #[derive(Subcommand)]
@@ -18,10 +19,14 @@ pub enum Commands {
 
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum Defects {
-    BadAccessControl,
     UncheckedReturn,
     Overflow,
     PrecisionLoss,
+    InfiniteLoop,
+    UnusedConstant,
+    UnusedPrivateFunctions,
+    UnnecessaryTypeConversion,
+    UnnecessaryBoolJudgment,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
