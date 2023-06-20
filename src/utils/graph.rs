@@ -13,6 +13,7 @@ use std::{
     fmt::Debug,
 };
 
+#[derive(Debug, Clone)]
 pub struct NaturalLoop<T: Ord + Copy + Debug> {
     pub loop_header: T,
     pub loop_latch: T, // latch -> header is the back edge representing this loop

@@ -24,118 +24,21 @@ fn test_detect_unchecked_return() {
     stbgr.generate_function();
     for (idx, function) in stbgr.functions.iter().enumerate() {
         if detect_unchecked_return(function) {
-            let name = cm.identifier_at(cm.function_handle_at(cm.function_defs[idx].function).name);
-            println!("{} : {}", name, "unchecked return");
+            println!("{}", "111");
         }
     }
 }
 
 #[test]
-fn test_detect_overflow() {
-    let filename = PathBuf::from_str("/home/yule/Movebit/detect/build/movebit/bytecode_modules/overflow.mv").unwrap();
+fn test_loop() {
+    let filename = PathBuf::from_str("/Users/lteng/Movebit/detect/build/movebit/bytecode_modules/infinite_loop.mv").unwrap();
+    // let filename = PathBuf::from_str("/Users/lteng/Movebit/AptosProjects/lend-config/build/LendConfig/bytecode_modules/borrow_interest_rate.mv").unwrap();
     let cm = compile_module(filename);
     let mut stbgr = StacklessBytecodeGenerator::new(&cm);
     stbgr.generate_function();
-    for (idx, function) in stbgr.functions.iter().enumerate() {
-        println!("{:?}", function.code);
-        let func_define = cm.function_def_at(FunctionDefinitionIndex::new(idx as u16));
-        let view = FunctionDefinitionView::new(&cm, &func_define);
-        let parameters_len = view.parameters().len();
-        if detect_overflow(function, &function.local_types) {
-            let name = cm.identifier_at(cm.function_handle_at(cm.function_defs[idx].function).name);
-            println!("{} : {}", name, "overflow");
-        }
-    }
-}
-
-#[test]
-fn test_detect_precision_loss() {
-    let filename = PathBuf::from_str("/home/yule/Movebit/detect/build/movebit/bytecode_modules/precision.mv").unwrap();
-    let cm = compile_module(filename);
-    let mut stbgr = StacklessBytecodeGenerator::new(&cm);
-    stbgr.generate_function();
-    for (idx, function) in stbgr.functions.iter().enumerate() {
-        // println!("{:?}",function.code);
-        if detect_precision_loss(function, &stbgr.symbol_pool) {
-            let name = cm.identifier_at(cm.function_handle_at(cm.function_defs[idx].function).name);
-            println!("{} : {}", name, "precision loss");
-        }
-    }
-}
-
-#[test]
-fn test_detect_infinite_loop() {
-    // let filename = PathBuf::from_str("").unwrap();
-    // let cm = compile_module(filename);
-    // let mut stbgr = StacklessBytecodeGenerator::new(&cm);
-    // stbgr.generate_function();
-    // for (idx, function) in stbgr.functions.iter().enumerate() {
-    //     if detect_infinite_loop(function, &function.local_types) {
-    //         let name = cm.identifier_at(cm.function_handle_at(cm.function_defs[idx].function).name);
-    //         println!("{} : {}", name, "unnecessary type conversion");
-    //     }
-    // }
-}
-
-#[test]
-fn test_detect_unused_constant() {
-    // let filename = PathBuf::from_str("/home/yule/Movebit/detect/build/movebit/bytecode_modules/unnecessary_type_conversion.mv").unwrap();
-    // let cm = compile_module(filename);
-    // let mut stbgr = StacklessBytecodeGenerator::new(&cm);
-    // stbgr.generate_function();
-    // for (idx, function) in stbgr.functions.iter().enumerate() {
-    //     // println!("{:?}", function.code);
-    //     // println!("{:?}", &function.local_types);
-    //     if detect_unnecessary_type_conversion(function, &function.local_types) {
-    //         let name = cm.identifier_at(cm.function_handle_at(cm.function_defs[idx].function).name);
-    //         println!("{} : {}", name, "unnecessary type conversion");
-    //     }
-    // }
-}
-
-#[test]
-fn test_detect_unused_private_functions() {
-    // let filename = PathBuf::from_str("/home/yule/Movebit/detect/build/movebit/bytecode_modules/unnecessary_type_conversion.mv").unwrap();
-    // let cm = compile_module(filename);
-    // let mut stbgr = StacklessBytecodeGenerator::new(&cm);
-    // stbgr.generate_function();
-    // for (idx, function) in stbgr.functions.iter().enumerate() {
-    //     // println!("{:?}", function.code);
-    //     // println!("{:?}", &function.local_types);
-    //     if detect_unnecessary_type_conversion(function, &function.local_types) {
-    //         let name = cm.identifier_at(cm.function_handle_at(cm.function_defs[idx].function).name);
-    //         println!("{} : {}", name, "unnecessary type conversion");
-    //     }
-    // }
-}
-
-#[test]
-fn test_detect_unnecessary_type_conversion() {
-    let filename = PathBuf::from_str("/home/yule/Movebit/detect/build/movebit/bytecode_modules/unnecessary_type_conversion.mv").unwrap();
-    let cm = compile_module(filename);
-    let mut stbgr = StacklessBytecodeGenerator::new(&cm);
-    stbgr.generate_function();
-    for (idx, function) in stbgr.functions.iter().enumerate() {
-        // println!("{:?}", function.code);
-        // println!("{:?}", &function.local_types);
-        if detect_unnecessary_type_conversion(function, &function.local_types) {
-            let name = cm.identifier_at(cm.function_handle_at(cm.function_defs[idx].function).name);
-            println!("{} : {}", name, "unnecessary type conversion");
-        }
-    }
-}
-
-#[test]
-fn test_detect_unnecessary_bool_judgment() {
-    let filename = PathBuf::from_str("/home/yule/Movebit/detect/build/movebit/bytecode_modules/unnecessary_bool_judgment.mv").unwrap();
-    let cm = compile_module(filename);
-    let mut stbgr = StacklessBytecodeGenerator::new(&cm);
-    stbgr.generate_function();
-    for (idx, function) in stbgr.functions.iter().enumerate() {
-        // println!("{:?}", function.code);
-        if detect_unnecessary_bool_judgment(function, &function.local_types) {
-            let name = cm.identifier_at(cm.function_handle_at(cm.function_defs[idx].function).name);
-            println!("{} : {}", name, "unnecessary bool judgment");
-        }
-    }
+    stbgr.get_control_flow_graph();
+    let filename = PathBuf::from("cfg.dot");
+    generate_cfg_in_dot_format(&stbgr.functions[0], filename, &stbgr);
+    let data_depent: crate::move_ir::data_dependency::DataDepent = data_dependency(&stbgr, 0);
+    detect_infinite_loop(&stbgr, 0);
 }
