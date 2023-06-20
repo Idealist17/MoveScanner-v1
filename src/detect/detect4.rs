@@ -43,16 +43,16 @@ pub fn detect_infinite_loop(stbgr: &StacklessBytecodeGenerator, idx: usize) -> b
                 _ => { continue; }
             }
             let bc = &function.code[upper as usize];
-            println!("{:?}", bc);
-            println!("{:#?}",fat_loop.mut_targets.values());
-            println!("{:#?}", fat_loop.val_targets);
+            // println!("{:?}", bc);
+            // println!("{:#?}",fat_loop.mut_targets.values());
+            // println!("{:#?}", fat_loop.val_targets);
             match bc {
                 Bytecode::Branch(_, then_label, else_label, src) => {
                     let cond = data_depent.get(*src);
-                    let mut res = "".to_string();
-                    cond.display(&mut res, stbgr);
-                    println!("{}", res);
-                    println!("{} {}", src, cond.maybe_changed());
+                    // let mut res = "".to_string();
+                    // cond.display(&mut res, stbgr);
+                    // println!("{}", res);
+                    println!("{} {}", src, cond.is_const());
                 },
                 _ => {
                     continue;

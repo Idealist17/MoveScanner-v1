@@ -54,7 +54,7 @@ impl Node {
         }
     }
 
-    pub fn maybe_changed(&self) -> bool {
+    pub fn is_const(&self) -> bool {
         let mut is_const = true;
         match &self.value {
             Val::Oper(op) => {
