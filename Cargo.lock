@@ -16,6 +16,7 @@ dependencies = [
  "clap 4.3.4",
  "codespan",
  "codespan-reporting",
+ "ethnum",
  "hex",
  "itertools",
  "move-binary-format",
