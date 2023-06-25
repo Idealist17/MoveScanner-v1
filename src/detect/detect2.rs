@@ -8,8 +8,9 @@ use move_stackless_bytecode::stackless_bytecode::{
 use ethnum::U256;
 use move_model::{ty::{PrimitiveType, Type}};
 
-pub fn detect_overflow(function: &FunctionInfo, local_types: &Vec<Type>) -> bool {
+pub fn detect_overflow(function: &FunctionInfo) -> bool {
     let mut ret_flag = false;
+    let local_types = &function.local_types;
     for (code_offset, bytecode) in function.code.iter().enumerate() {
         match &bytecode {
             Bytecode::Call(_, _ , Operation::Shl, srcs, _) => {
