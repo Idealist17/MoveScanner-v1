@@ -18,7 +18,6 @@ use MoveScanner::{
 };
 use itertools::Itertools;
 use move_binary_format::{access::ModuleAccess, CompiledModule};
-use move_core_types::identifier::IdentStr;
 
 fn main() {
     let cli = Cli::parse();

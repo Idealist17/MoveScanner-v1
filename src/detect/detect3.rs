@@ -1,6 +1,6 @@
 // precision_loss
 
-use std::{cmp, rc::Rc};
+use std::rc::Rc;
 
 use crate::move_ir::generate_bytecode::FunctionInfo;
 use move_model::symbol::SymbolPool;

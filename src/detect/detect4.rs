@@ -1,11 +1,10 @@
 // infinite_loop
 
-use std::collections::{BTreeSet, btree_set::Union};
+use std::collections::BTreeSet;
 
-use move_compiler::shared::ast_debug::print;
 use move_stackless_bytecode::{stackless_control_flow_graph::BlockContent, stackless_bytecode::Bytecode};
 
-use crate::move_ir::{generate_bytecode::{FunctionInfo, StacklessBytecodeGenerator}, fatloop::get_loops, data_dependency::data_dependency, control_flow_graph::BlockId};
+use crate::move_ir::{generate_bytecode::StacklessBytecodeGenerator, fatloop::get_loops, data_dependency::data_dependency, control_flow_graph::BlockId};
 
 
 pub fn detect_infinite_loop(stbgr: &StacklessBytecodeGenerator, idx: usize) -> bool {

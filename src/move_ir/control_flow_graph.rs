@@ -1,6 +1,6 @@
 use crate::move_ir::generate_bytecode::StacklessBytecodeGenerator;
 use move_stackless_bytecode::{
-    stackless_bytecode::{AssignKind, AttrId, Bytecode, Constant, Label, Operation},
+    stackless_bytecode::{Bytecode, Label},
     stackless_control_flow_graph::{StacklessControlFlowGraph, BlockContent},
 };
 use move_binary_format::file_format::CodeOffset;

@@ -1,10 +1,8 @@
-use std::{vec, rc::Rc, collections::BTreeMap, cell::RefCell, fmt::{Formatter, self}};
+use std::{vec, collections::BTreeMap};
 
-use crate::move_ir::generate_bytecode::FunctionInfo;
 use move_binary_format::{access::ModuleAccess, views::FunctionHandleView, file_format::FunctionHandleIndex};
 use move_stackless_bytecode::{stackless_bytecode::{
-    AbortAction, AssignKind, AttrId, BorrowEdge, BorrowNode,
-    Bytecode::{self, *}, HavocKind, Label, Operation::{self, *}, PropKind, Constant,
+    Bytecode::{self, *}, Operation::{self, *}, Constant,
 }};
 use move_model::ty::{Type, TypeDisplayContext};
 

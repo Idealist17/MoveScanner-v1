@@ -1,9 +1,7 @@
 // =================================================================================================
 // Formatting
 use core::fmt;
-use move_binary_format::{
-    binary_views::FunctionView, file_format::CodeOffset, views::FunctionDefinitionView,
-};
+use move_binary_format::file_format::CodeOffset;
 use move_model::{
     ast::TempIndex,
     model::{ModuleId, StructId},
@@ -12,8 +10,8 @@ use move_model::{
 use std::{collections::BTreeMap, fmt::Formatter};
 
 use move_stackless_bytecode::stackless_bytecode::{
-    AbortAction, AssignKind, AttrId, BorrowEdge, BorrowNode,
-    Bytecode::{self}, HavocKind, Label, Operation, PropKind,
+    AbortAction, AssignKind, BorrowEdge, BorrowNode,
+    Bytecode::{self}, HavocKind, Label, Operation,
 };
 
 use super::generate_bytecode::StacklessBytecodeGenerator;
@@ -453,7 +451,7 @@ pub struct BorrowEdgeDisplay<'a> {
 
 impl<'a> std::fmt::Display for BorrowEdgeDisplay<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use BorrowEdge::*;
+        // use BorrowEdge::*;
         // TODO
         // let tctx = TypeDisplayContext::WithEnv {
         //     env: self.env,

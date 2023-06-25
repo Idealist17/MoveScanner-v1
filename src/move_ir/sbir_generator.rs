@@ -1,6 +1,5 @@
 use move_binary_format::file_format::Visibility;
 use move_binary_format::CompiledModule;
-use move_bytecode_utils::Modules;
 use move_model::model::FunId;
 use move_model::{run_bytecode_model_builder, model::QualifiedId};
 use move_model::symbol::Symbol;
@@ -18,10 +17,8 @@ use codespan_reporting::{diagnostic::Severity, term::termcolor::Buffer};
 use move_model::{ast::ModuleName, model::GlobalEnv, ty::Type};
 use move_package::{source_package::layout::SourcePackageLayout, BuildConfig, ModelConfig};
 use move_stackless_bytecode::{
-    function_target::FunctionTarget,
     function_target_pipeline::{FunctionTargetsHolder, FunctionVariant},
     stackless_bytecode::Bytecode,
-    stackless_bytecode_generator::StacklessBytecodeGenerator,
     stackless_control_flow_graph::{generate_cfg_in_dot_format, StacklessControlFlowGraph},
 };
 

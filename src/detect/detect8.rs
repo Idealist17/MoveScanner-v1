@@ -1,13 +1,10 @@
 // Unnecessary Bool Judgment
 
-use std::{cmp, rc::Rc};
-
 use crate::move_ir::generate_bytecode::FunctionInfo;
-use move_model::symbol::SymbolPool;
 use move_stackless_bytecode::stackless_bytecode::{
     Bytecode, Operation, Constant
 };
-use move_model::{ty::{PrimitiveType, Type, TypeDisplayContext}};
+use move_model::{ty::{PrimitiveType, Type}};
 
 pub fn detect_unnecessary_bool_judgment(function: &FunctionInfo, local_types: &Vec<Type>) -> bool {
     let mut ret_flag = false;

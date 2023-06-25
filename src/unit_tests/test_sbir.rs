@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use crate::move_ir::sbir_generator::*;
 
 #[test]

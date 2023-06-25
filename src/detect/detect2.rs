@@ -1,7 +1,6 @@
 // overflow
 
 use crate::move_ir::generate_bytecode::FunctionInfo;
-use move_binary_format::{views::FunctionDefinitionView, CompiledModule, access::ModuleAccess, file_format::FunctionDefinitionIndex};
 use move_stackless_bytecode::stackless_bytecode::{
     Bytecode, Operation, Constant
 };

@@ -5,7 +5,7 @@ use move_model::ast::{self, TempIndex};
 use move_stackless_bytecode::{stackless_bytecode::{AttrId, Label, Bytecode, Operation, BorrowNode, AbortAction, PropKind}, stackless_control_flow_graph::{StacklessControlFlowGraph, BlockContent}};
 
 use crate::{
-    move_ir::{control_flow_graph::BlockId, generate_bytecode::{StacklessBytecodeGenerator, FunctionInfo}},
+    move_ir::{control_flow_graph::BlockId, generate_bytecode::FunctionInfo},
     utils::graph::{Graph, NaturalLoop},
 };
 
