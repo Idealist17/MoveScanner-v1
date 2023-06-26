@@ -16,7 +16,7 @@ pub fn detect_unnecessary_bool_judgment(function: &FunctionInfo, local_types: &V
                 let oprand2 = get_oprand_bytecode(&function.code, code_offset, srcs[1]);
                 if (is_ldbool(oprand1) && ret_is_bool(oprand2, local_types)) || (is_ldbool(oprand2) && ret_is_bool(oprand1, local_types)) {
                     ret_flag = true;
-                    println!("{:?}", oprand1);
+                    // println!("{:?}", oprand1);
                     break;
                 }
             },
