@@ -22,6 +22,8 @@ pub fn visit_dirs(dir: &PathBuf, paths: &mut Vec<PathBuf>, subdir: bool) {
                 paths.push(path);
             }
         }
+    } else if dir.is_file() {
+        paths.push(dir.to_path_buf());
     }
 }
 
