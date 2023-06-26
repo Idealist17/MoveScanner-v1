@@ -142,7 +142,7 @@ pub fn data_dependency<'a>(stbgr: &'a StacklessBytecodeGenerator, idx: usize) ->
     }
 
     for (ii, code) in function.code.iter().enumerate() {
-        println!("{} {:?}", ii, code);
+        // println!("{} {:?}", ii, code);
         match code {
             Assign(_, dst, src, kind) => {
                 let node = data_depent.get(*src);

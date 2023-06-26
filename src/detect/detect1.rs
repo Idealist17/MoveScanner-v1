@@ -43,7 +43,7 @@ pub fn detect_unchecked_return(function: &FunctionInfo, symbol_pool: &SymbolPool
         return false;
     } else {
         for fun in be_call_funcs.iter() {
-            println!("{} has parameters but do not be used in {}", symbol_pool.string(*fun), cm.identifier_at(cm.function_handle_at(cm.function_defs[idx].function).name));
+            println!("function **:({}) has parameters but do not be used in {}", symbol_pool.string(*fun), cm.identifier_at(cm.function_handle_at(cm.function_defs[idx].function).name));
         }
         return true;
     }
