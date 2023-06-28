@@ -47,19 +47,38 @@ pub fn detect_infinite_loop(stbgr: &StacklessBytecodeGenerator, idx: usize) -> b
             // println!("{:#?}",fat_loop.mut_targets.values());
             // println!("{:#?}", fat_loop.val_targets);
             match bc {
-                Bytecode::Branch(_, then_label, else_label, src) => {
+                Bytecode::Branch(_, _, _, src) => {
                     let cond = data_depent.get(*src);
                     // let mut res = "".to_string();
                     // cond.display(&mut res, stbgr);
                     // println!("{}", res);
-
-                    let is_const = cond.is_const(); // 全部是数值型常量为true
-                    // println!("{} {}", src, is_const);
-                    ret_flag = ret_flag & is_const; // 所有循环中有一个循环条件为const，则为死循环
+                    let mut conditions = vec![];
+                    cond.loop_condition_from_copy(&mut conditions);
+                    if conditions.len() == 0 {
+                        continue;
+                    }
+                    for condition in conditions {
+                        for block_id in unions.iter() {
+                            let content = cfg.content(*block_id);
+                            match content {
+                                BlockContent::Basic { lower, upper } => {
+                                    for offset in *lower..*upper {
+                                        match function.code[offset as usize] {
+                                            Bytecode::Assign(_, dst, _, _) => {
+                                                if dst == condition {
+                                                    ret_flag = false;
+                                                }
+                                            },
+                                            _ => {}
+                                        }
+                                    }
+                                },
+                                _ => {}
+                            }
+                        }
+                    }
                 },
-                _ => {
-                    continue;
-                }
+                _ => {}
             }
         }
     }

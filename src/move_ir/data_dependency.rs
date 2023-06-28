@@ -2,7 +2,7 @@ use std::{vec, collections::BTreeMap};
 
 use move_binary_format::{access::ModuleAccess, views::FunctionHandleView, file_format::FunctionHandleIndex};
 use move_stackless_bytecode::{stackless_bytecode::{
-    Bytecode::{self, *}, Operation::{self, *}, Constant,
+    Bytecode::{self, *}, Operation::{self, *}, Constant, AssignKind::{self, *},
 }};
 use move_model::ty::{Type, TypeDisplayContext};
 
@@ -50,6 +50,25 @@ impl Node {
             value,
             subnodes: vec![lnode, rnode]
         }
+    }
+
+    pub fn loop_condition_from_copy(&self, condtions: &mut Vec<usize>) {
+        match &self.value {
+            Val::Oper(op) => {
+                for subnode in self.subnodes.iter() {
+                    subnode.loop_condition_from_copy(condtions);
+                }
+            },
+            Val::AssIgn(Bytecode::Assign(_, _, idx, assignkind)) => {
+                match assignkind {
+                    AssignKind::Copy => {
+                        condtions.push(*idx);
+                    },
+                    _ => {}
+                }
+            },
+            _ => {}
+        };
     }
 
     pub fn is_const(&self) -> bool {
