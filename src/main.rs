@@ -30,6 +30,7 @@ fn main() {
         let mut stbgr = StacklessBytecodeGenerator::new(&cm);
         stbgr.generate_function();
         stbgr.get_control_flow_graph();
+        stbgr.build_call_graph();
         match &cli.command {
             Some(Commands::Printer { printer }) => {
                 match &printer {
