@@ -23,7 +23,7 @@ unused-constant,
 unused-private-functions, 
 unnecessary-type-conversion, 
 unnecessary-bool-judgment,
-None(缺省时会检测执行上述所有检测)
+None(缺省时会检测执行上述所有检测)——》（subcommand缺省时也会默认执行所有检测）
 
 MoveScanner --filedir <FILEDIR> printer [PRINTER]
 <FILEDIR> 可以是单个字节码文件路径，也可以是字节码文件目录
