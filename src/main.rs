@@ -1,5 +1,5 @@
 use std::{fmt::format, fs, path::PathBuf, str::FromStr, vec};
-
+use std::time::{Duration, Instant};
 use MoveScanner::move_ir::packages::Packages;
 use clap::Parser;
 use itertools::Itertools;
@@ -28,8 +28,14 @@ use MoveScanner::{
     },
     utils::utils::{self, compile_module},
 };
+use chrono::{Local};
+#[macro_use] extern crate prettytable;
+use prettytable::{Cell, Row, Table};
+
 
 fn main() {
+    let start = Instant::now();
+    let mut defects_cnt = vec![0,0,0,0,0,0,0,0];
     let cli = Cli::parse();
     let dir = PathBuf::from(&cli.filedir);
     let mut paths = Vec::new();
@@ -37,21 +43,24 @@ fn main() {
 
     let mut cms = Vec::new();
     for filename in paths {
-        println!("Deserializing {:?}...", filename);
         if let Some(cm) = compile_module(filename) {
             cms.push(cm);
         }
     }
 
     let mut stbgrs = Vec::new();
+    println!("============================================================");
+    println!("\tModules List");
+    println!("------------------------------------------------------------");
     for cm in cms.iter() {
         let mut stbgr = StacklessBytecodeGenerator::new(&cm);
         stbgr.generate_function();
         stbgr.get_control_flow_graph();
         stbgr.build_call_graph();
+        println!("*\t{}",stbgr.module_data.name.name().display(&stbgr.symbol_pool));
         stbgrs.push(stbgr);
     }
-
+    println!("============================================================");
     let mut packages = Packages::new();
     for stbgr in stbgrs.iter() {
         packages.insert_stbgr(stbgr);
@@ -113,7 +122,7 @@ fn main() {
             Some(Commands::Detection { detection }) => {
                 let mname = stbgr.module_data.name.name();
                 println!(
-                    "============== Handling for {} ==============",
+                    "================== Handling for {} ==================",
                     mname.display(&stbgr.symbol_pool)
                 );
                 let mut detects: Vec<Vec<usize>> = vec![Vec::new(); 6];
@@ -215,7 +224,7 @@ fn main() {
             None => {
                 let mname = stbgr.module_data.name.name();
                 println!(
-                    "============== Handling for {} ==============",
+                    "================== Handling for {} ==================",
                     mname.display(&stbgr.symbol_pool)
                 );
                 let mut detects: Vec<Vec<usize>> = vec![Vec::new(); 6];
@@ -229,28 +238,36 @@ fn main() {
 
                     if detect_unchecked_return(function, &stbgr.symbol_pool, idx, stbgr.module) {
                         detects[0].push(idx);
+                        defects_cnt[0] += 1;
                     }
                     if detect_overflow(&packages, &stbgr, idx) {
                         detects[1].push(idx);
+                        defects_cnt[1] += 1;
                     }
                     if detect_precision_loss(function, &stbgr.symbol_pool) {
                         detects[2].push(idx);
+                        defects_cnt[2] += 1;
                     }
                     if detect_infinite_loop(&packages, &stbgr, idx) {
                         detects[3].push(idx);
+                        defects_cnt[3] += 1;
                     }
                     if detect_unnecessary_type_conversion(function, &function.local_types) {
                         detects[4].push(idx);
+                        defects_cnt[4] += 1;
                     }
                     if detect_unnecessary_bool_judgment(function, &function.local_types) {
                         detects[5].push(idx);
+                        defects_cnt[5] += 1;
                     }
                 }
                 let unused_constants = detect_unused_constants(&stbgr);
+                defects_cnt[6] += unused_constants.len();
                 if !unused_constants.is_empty() {
                     println!("Unused constants: {:?}", unused_constants);
                 }
                 let unused_private_functions = detect_unused_private_functions(&stbgr);
+                defects_cnt[7] += unused_private_functions.len();
                 let unused_private_function_names = unused_private_functions
                     .iter()
                     .map(|func| func.symbol().display(&stbgr.symbol_pool).to_string())
@@ -262,10 +279,11 @@ fn main() {
                     );
                 }
                 format_result(&detects, stbgr.module);
-                println!("==============================================\n");
             }
         }
     }
+    let duration: Duration = start.elapsed();
+    print_results(duration, defects_cnt);
 }
 
 fn format_result(detects: &Vec<Vec<usize>>, cm: &CompiledModule) {
@@ -288,6 +306,19 @@ fn format_result(detects: &Vec<Vec<usize>>, cm: &CompiledModule) {
                 cm.identifier_at(handle.name).as_str()
             })
             .collect_vec();
-        println!("{}: {:?}", *d_type, detect_fname);
+        println!("{}: \n{:?}", *d_type, detect_fname);
     }
+}
+
+fn print_results(duration: Duration, defects_cnt: Vec<usize>) {
+    println!("\n\n============================================================");
+    let fmt = "%Y,%m,%d %H:%M:%S";
+    println!("\tMovaScanner - Results\n\tTest time : {}",Local::now().format(fmt));
+    println!("============================================================");
+    println!("\tSummary");
+    println!("time consuming:{:?}",duration);
+    let table = table!(["UR","OF","PL","IL","UTC","UBJ","UC","UP"],
+            [defects_cnt[0], defects_cnt[1], defects_cnt[2],defects_cnt[3],defects_cnt[4],defects_cnt[5],defects_cnt[6],defects_cnt[7]]);
+    table.printstd();
+    println!("============================================================");
 }

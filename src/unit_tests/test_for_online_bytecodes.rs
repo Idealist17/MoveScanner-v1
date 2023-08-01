@@ -6,6 +6,7 @@ detect::{detect1::detect_unchecked_return, detect2::detect_overflow, detect3::de
     detect7::detect_unnecessary_type_conversion, detect8::detect_unnecessary_bool_judgment, detect5::detect_unused_constants, detect6::detect_unused_private_functions}};
 use std::time::{Duration, Instant};
 
+
 #[test]
 fn test_for_online_bytecodes() {
     let start = Instant::now();
