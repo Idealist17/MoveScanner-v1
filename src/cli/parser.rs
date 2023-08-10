@@ -1,44 +1,43 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser,Subcommand};
 
 #[derive(Parser)]
-#[command(author="yule liteng", version="0.01", about="This is a static analysis tool for move smart contracts.", long_about = None)]
+#[clap(author, version, about)]
+pub struct Args {
+    #[clap(short = 'p', long = "path", help = "Path to input dir/file")]
+    pub path: String,
+
+    #[clap(short = 'o', long = "output", help = "Path to output file", default_value=Some("result.json"))]
+    pub output: Option<String>,
+
+    #[clap(short = 'j',long = "json",help="Print result as json on terminal")]
+    pub json: bool,
+
+    #[clap(short = 'i', long, help = "IR type",)]
+    pub ir_type: Option<IR>
+}
+
+#[derive(Parser)]
+#[command(author="yule liteng happytsing", version="1.0.0", about="A static analysis tool based on bytecode for move smart contracts.", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Option<Commands>,
+    pub command: Option<SubCommands>,
 
-    // #[clap(short = 'f', long, default_value_t = ("/home/yule/Movebit/detect/sources/unchecked_return.move").to_string(), help = "The project under this dir will be analyzed")]
-    #[clap(short = 'f', long, help = "The project under this dir will be analyzed")]
-    pub filedir: String,
-
-    #[clap(short = 'j', long, help = "Write the result in json", default_value=Some("result.json"))]
-    pub json_file: Option<String>,
+    #[clap(flatten)]
+    pub args: Args,
 }
 
 #[derive(Subcommand)]
-pub enum Commands {
-    Printer { printer: Option<Infos> },
-    Detection { detection:  Option<Defects> },
+pub enum SubCommands {
+    Printer,
+    Detector
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]
-pub enum Defects {
-    UncheckedReturn, //detect1
-    Overflow, //detect2
-    PrecisionLoss, //detect3
-    InfiniteLoop, //detect4
-    UnusedConstant, //detect5
-    UnusedPrivateFunctions, //detect6
-    UnnecessaryTypeConversion, //detect7
-    UnnecessaryBoolJudgment, //detect8
-    // AllIn, //all detects
-}
-
-#[derive(clap::ValueEnum, Clone, Debug)]
-pub enum Infos {
-    IR, // Stackless Bytecode IR
+pub enum IR {
+    SB, // Stackless Bytecode
     CM, // Compile Module
     CFG, // Control Flow Graph
     DU, // Tempindex def and use
-    FNs, // Function Signatures
+    FS, // Function Signatures
     CG // Function Call Graph
 }
