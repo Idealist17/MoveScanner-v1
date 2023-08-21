@@ -19,10 +19,7 @@
       // "args": ["-p", "/home/wlq/Project/MoveBit/MoveScanner/res/examples_mv/aptos"],
       "args": [
         "-p",
-        "/home/wlq/Project/MoveBit/MoveScannerTest/OnChain/res/bytecode/Aptos/0x0000000000000000000000000000000000000000000000000000000000000001_type_info_40332321.mv",
-        "-o",
-        "/home/wlq/Project/MoveBit/MoveScannerTest/OnChain/result/json/Aptos/0x0000000000000000000000000000000000000000000000000000000000000001_type_info_40332321.json",
-        "-n"
+        "/home/wlq/Project/MoveBit/MoveScannerTest/OpenSource/res/repo/Aptos/lend-config",
       ],
       "cwd": "${workspaceFolder}"
     },

@@ -42,15 +42,14 @@ A static analysis tool based on bytecode for move smart contracts.
 Usage: MoveScanner [OPTIONS] --path <PATH> [COMMAND]
 
 Commands:
-  printer
-  detector
+  printer   
+  detector  
   help      Print this message or the help of the given subcommand(s)
 
 Options:
   -p, --path <PATH>        Path to input dir/file
   -o, --output <OUTPUT>    Path to output file [default: result.json]
   -n, --none               Print nothing on terminal
-  -j, --json               Print result as json on terminal
   -i, --ir-type <IR_TYPE>  IR type [possible values: sb, cm, cfg, du, fs, cg]
   -h, --help               Print help
   -V, --version            Print version
@@ -61,12 +60,16 @@ Options:
 **detector is default executor**, so you can omit it when using it.
 
 ```shell
-# -f <bytecode_dir>
-# Tips: Normally you should input 'build/.../bytecode_modules'
-MoveScanner -p "./res/examples_mv/sui"
+# MoveScanner -p <bytecode_file_path>
+MoveScanner -p ./res/examples_bytecode/sui/overflow.mv
 
-# -f <bytecode_file>
-MoveScanner -p "./res/examples_mv/sui/overflow.mv"
+# MoveScanner -p <bytecode_dir_path>
+# Tips: Normally you should input 'build/.../bytecode_modules'
+MoveScanner -p ./res/examples_bytecode/sui
+
+# MoveScanner -p <package_path>
+# Tips: Make sure the project is compiled
+MoveScanner -p ./res/examples_project/sui_proj
 ```
 
 The result is output to `result.json` by default, you can customize the output file name and path by running `-o`：

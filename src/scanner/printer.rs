@@ -1,33 +1,31 @@
 use crate::{
-    cli::parser::{Args,IR},
+    cli::parser::IR,
     move_ir::{
         control_flow_graph::generate_cfg_in_dot_format,
         packages::{build_compiled_modules, Packages},
     },
+    scanner::option::Options,
 };
 use move_binary_format::access::ModuleAccess;
 use petgraph::dot::Dot;
 use std::{fs, path::PathBuf};
 
 pub struct Printer {
-    pub args: Args,
+    options: Options,
     // pub result: Result,
 }
 
 impl Printer {
-    pub fn new(args: Args) -> Self {
-        Self {
-            args,
-            // result: Result::empty(),
-        }
+    pub fn new(options: Options) -> Self {
+        Self { options }
     }
 
     pub fn run(&mut self) {
-        let cms = build_compiled_modules(&self.args.path);
+        let cms = build_compiled_modules(&self.options.bytecode_path);
         let packages = Packages::new(&cms);
         // 遍历packages中的stbgr
         for (mname, &ref stbgr) in packages.get_all_stbgr().iter() {
-            match self.args.ir_type {
+            match self.options.ir_type {
                 Some(IR::CFG) => {
                     let dot_dir = "./dots";
                     if !fs::metadata(dot_dir).is_ok() {
