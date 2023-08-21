@@ -1,5 +1,5 @@
 use super::generate_bytecode::{FunctionInfo, StacklessBytecodeGenerator};
-use crate::utils::utils;
+use crate::{utils::utils,scanner::result::ModuleName};
 use move_binary_format::CompiledModule;
 use move_model::model::FunId;
 use std::{collections::BTreeMap, path::PathBuf};
@@ -55,6 +55,9 @@ impl<'a> Packages<'a> {
         }
         &stbgr.functions[idx as usize]
     }
+    pub fn get_module_names(&self) -> Vec<ModuleName>{
+         self.packages.keys().cloned().collect()
+    }
 }
 pub fn compile_module(filename: PathBuf) -> Option<CompiledModule> {
     let f = fs::File::open(filename).unwrap();
@@ -65,11 +68,10 @@ pub fn compile_module(filename: PathBuf) -> Option<CompiledModule> {
     cm.ok()
 }
 
-pub fn build_compiled_modules(path: &String) -> Vec<CompiledModule> {
-    let dir = PathBuf::from(&path);
+pub fn build_compiled_modules(bytecode_path: &PathBuf) -> Vec<CompiledModule> {
     // 输入路径遍历
     let mut paths = Vec::new();
-    utils::visit_dirs(&dir, &mut paths, false);
+    utils::visit_dirs(&bytecode_path, &mut paths, false);
     // 输入文件解析(反序列化成CompiledModule)
     let mut cms = Vec::new();
     for filename in paths {
