@@ -31,10 +31,10 @@ impl Options {
                 if entry.path().is_dir() {
                     if entry.file_name() == "sources" {
                         sources_path = Some(entry.path());
-                        println!("sources： {}", entry.path().display());
+                        // println!("sources： {}", entry.path().display());
                     } else if entry.file_name() == "build" {
                         build_path = Some(entry.path());
-                        println!("build： {}", entry.path().display());
+                        // println!("build： {}", entry.path().display());
                     }
                 }
             }
@@ -46,7 +46,7 @@ impl Options {
                 if entry.file_type().is_dir() {
                     if entry.file_name() == "bytecode_modules" {
                         bytecode_path = entry.path().to_path_buf();
-                        println!("bytecode_modules:  {}", entry.path().display());
+                        // println!("bytecode_modules:  {}", entry.path().display());
                     }
                 }
             }

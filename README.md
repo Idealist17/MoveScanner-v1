@@ -13,7 +13,7 @@ cd MoveScanner-v1
 
 **Step 2.** Configure Shell (Option)
 
-`build.sh` will automatically configure MoveScanner for your default shell. 
+`build.sh` will automatically configure MoveScanner for your default shell.
 
 If you wish to use MoveScanner on another shell, you should add the following to shell configuration file.
 
@@ -42,8 +42,8 @@ A static analysis tool based on bytecode for move smart contracts.
 Usage: MoveScanner [OPTIONS] --path <PATH> [COMMAND]
 
 Commands:
-  printer   
-  detector  
+  printer
+  detector
   help      Print this message or the help of the given subcommand(s)
 
 Options:
@@ -82,7 +82,7 @@ MoveScanner -p "./res/examples_mv/sui" -o my_result.json
 MoveScanner -p "./res/examples_mv/sui" -o /my/path/my_result.json
 ```
 
-if you want to print result as json on termianl, use `-j`, if you don't want to output results on the command line, use `-n`.
+If you don't want to output results on the command line, use `-n`.
 
 ### Printer
 

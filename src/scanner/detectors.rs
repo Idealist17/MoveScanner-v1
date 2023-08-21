@@ -12,9 +12,7 @@ use crate::{
         result::*,
     },
     utils::utils::print_logo,
-
 };
-use walkdir::WalkDir;
 use num::ToPrimitive;
 use regex::Regex;
 use std::{
@@ -23,6 +21,7 @@ use std::{
     io::{BufRead, BufReader, Write},
     time::Instant,
 };
+use walkdir::WalkDir;
 pub trait AbstractDetector<'a> {
     fn new(packages: &'a Packages<'a>) -> Self
     where
@@ -60,12 +59,11 @@ impl Detectors {
             Box::new(Detector7::new(&packages)),
             Box::new(Detector8::new(&packages)),
         ];
-
+        // run detectors
         for detector in detectors.iter_mut() {
             let detect_content = detector.run();
             self.merge_result(detect_content);
         }
-
         self.complete_result(clock);
     }
 
@@ -108,7 +106,7 @@ impl Detectors {
                 .function_count
                 .get_mut(&FunctionType::All)
                 .unwrap() = stbgr.functions.len();
-                module_info.location =locations.get(module_name).unwrap().clone();
+            module_info.location = locations.get(module_name).unwrap().clone();
             for (idx, _function) in stbgr.functions.iter().enumerate() {
                 if utils::is_native(idx, stbgr) {
                     *module_info
@@ -138,7 +136,10 @@ impl Detectors {
         }
     }
 
-    // 收尾工作，生成执行总耗时、pass 和 wrong 的 module 数量
+    /// 收尾工作:
+    /// 1. 总耗时
+    /// 2. 若 module 未检出任何漏洞，则标记为 pass，否则 wrong
+    /// 3. result 汇总 module 状态信息
     fn complete_result(&mut self, clock: Instant) {
         self.result.total_time = clock.elapsed().as_micros().to_usize().unwrap();
         // let module_count = self.result.modules.len();
@@ -175,7 +176,9 @@ impl Detectors {
         let mut all_sources_path = Vec::new();
         if let Some(source_path) = self.options.sources_path.clone() {
             for entry in WalkDir::new(source_path).into_iter().filter_map(|e| e.ok()) {
-                if entry.file_type().is_file() && entry.file_name().to_str().unwrap().ends_with(".move") {
+                if entry.file_type().is_file()
+                    && entry.file_name().to_str().unwrap().ends_with(".move")
+                {
                     all_sources_path.push(entry.path().to_path_buf());
                 }
             }
@@ -198,12 +201,12 @@ impl Detectors {
                     for (line_num, line) in reader.lines().enumerate() {
                         if let Ok(line) = line {
                             if re.is_match(&line) {
-                                println!(
-                                    "Found '{}' in file '{}' at line {}",
-                                    module_name,
-                                    source_path.display(),
-                                    line_num + 1
-                                );
+                                // println!(
+                                //     "Found '{}' in file '{}' at line {}",
+                                //     module_name,
+                                //     source_path.display(),
+                                //     line_num + 1
+                                // );
                                 let location =
                                     format!("{}:{}", source_path.display(), line_num + 1);
                                 res.insert(module_name.to_string(), Some(location));
@@ -227,12 +230,12 @@ impl Detectors {
                     for (line_num, line) in reader.lines().enumerate() {
                         if let Ok(line) = line {
                             if re.is_match(&line) {
-                                println!(
-                                    "Found '{}' in file '{}' at line {}",
-                                    module_name,
-                                    used_source_path.display(),
-                                    line_num + 1
-                                );
+                                // println!(
+                                //     "Found '{}' in file '{}' at line {}",
+                                //     module_name,
+                                //     used_source_path.display(),
+                                //     line_num + 1
+                                // );
                                 let location =
                                     format!("{}:{}", used_source_path.display(), line_num + 1);
                                 res.insert(module_name.to_string(), Some(location));
@@ -245,7 +248,8 @@ impl Detectors {
             }
             // 若还是没找到，报错
             if !find {
-                println!("Error: {} not found in source code！", module_name);
+                res.insert(module_name.to_string(), None);
+                println!("Info: {} not found in source code！", module_name);
             }
         }
         res
