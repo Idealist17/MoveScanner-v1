@@ -3,11 +3,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter};
+use ansi_term::Colour;
 
 pub type ModuleName = String;
 pub type FunctionName = String;
 // 路径+行号
 pub type Location = String;
+
 
 #[derive(Debug, Display, Serialize, Deserialize, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "lowercase")]
@@ -135,12 +137,12 @@ impl std::fmt::Display for Result {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
-            "\n{}: \x1B[32m{:<6}\x1B[0m {}: \x1B[31m{:<6}\x1B[0m time: \x1B[34m{}\x1B[0m us\n",
+            "\n{}: {:<8} {}: {:<8} time: {:<8} us\n",
             Status::Pass,
-            self.modules_status.get(&Status::Pass).unwrap().len(),
+            Colour::Green.paint(self.modules_status.get(&Status::Pass).unwrap().len().to_string()),
             Status::Wrong,
-            self.modules_status.get(&Status::Wrong).unwrap().len(),
-            self.total_time
+            Colour::Red.paint(self.modules_status.get(&Status::Pass).unwrap().len().to_string()),
+            Colour::Blue.paint(self.total_time.to_string())
         )?;
 
         for (module_index, (module_name, module_info)) in self
@@ -164,7 +166,7 @@ impl std::fmt::Display for Result {
                     // writeln!(f, "\n")?;
                     continue;
                 }
-                write!(f, "\x1B[31m{}\x1B[0m: ", detector_type)?;
+                write!(f, "{}: ", Colour::Red.paint(detector_type.to_string()))?;
                 let values_str = values.iter().join(",");
                 match detector_type {
                     DetectKind::UncheckedReturn => {

@@ -2,7 +2,7 @@ use crate::cli::parser::{Args, IR};
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
-
+// use toml::Value;
 // 终端输出格式
 #[derive(Debug, Clone)]
 pub enum TerminalFormat {
@@ -11,12 +11,13 @@ pub enum TerminalFormat {
 }
 #[derive(Debug, Clone)]
 pub struct Options {
-    // 源码目录可能不存在
+    // options from args
     pub sources_path: Option<PathBuf>,
     pub bytecode_path: PathBuf,
     pub output_path: PathBuf,
     pub terminal_format: TerminalFormat,
     pub ir_type: Option<IR>,
+    // pub config:Value
 }
 
 impl Options {
