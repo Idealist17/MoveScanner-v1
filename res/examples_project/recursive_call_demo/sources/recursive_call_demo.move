@@ -1,4 +1,5 @@
-module recursive_call_demo::recursive_call_demo{
+module recursive_call_demo::recursive_call_demo
+{
 
     use recursive_call_demo::recursive_call_demo2;
 

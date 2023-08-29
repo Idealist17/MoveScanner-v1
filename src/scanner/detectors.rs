@@ -193,7 +193,7 @@ impl Detectors {
         }
         for module_name in module_name_list {
             let re =
-                Regex::new(format!("module .*::{}[{{ ]", module_name).to_string().as_str()).unwrap();
+                Regex::new(format!(r"module .*::{}([{{\s]|$)", module_name).to_string().as_str()).unwrap();
             let mut find = false;
             // 1. 首先查询未使用过的源码
             for source_path in all_sources_path.iter() {
