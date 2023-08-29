@@ -1,0 +1,9 @@
+[package]
+name = "recursive_call_demo"
+version = "0.0.1"
+
+[dependencies]
+#Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet" }
+Sui = { local = "/home/yww/sui/crates/sui-framework/packages/sui-framework" }
+[addresses]
+recursive_call_demo = "0x0"

@@ -185,7 +185,7 @@ impl Detectors {
                 }
             }
         } else {
-            // 不存在 sources path 的时候，直接返回空
+            // 不存在 sources path 的时候，直接返回 None
             for module_name in module_name_list {
                 res.insert(module_name.to_string(), None);
             }
@@ -193,7 +193,7 @@ impl Detectors {
         }
         for module_name in module_name_list {
             let re =
-                Regex::new(format!("module .*::{}", module_name).to_string().as_str()).unwrap();
+                Regex::new(format!("module .*::{}[{{ ]", module_name).to_string().as_str()).unwrap();
             let mut find = false;
             // 1. 首先查询未使用过的源码
             for source_path in all_sources_path.iter() {
@@ -224,7 +224,7 @@ impl Detectors {
                     break;
                 }
             }
-            // 若在未查询过的源码中没找到对应 module 的定义，那么在已经查询到过 module 定义的源码中查找（该文件定义了多个 module）
+            // 2. 若在未查询过的源码中没找到对应 module 的定义，那么在已经查询到过 module 定义的源码中查找（该文件定义了多个 module）
             if !find {
                 for used_source_path in used_sources_path.iter() {
                     let file = fs::File::open(used_source_path).unwrap();
@@ -248,7 +248,7 @@ impl Detectors {
                     }
                 }
             }
-            // 若还是没找到，报错
+            // 3. 若还是没找到，则写入 None
             if !find {
                 res.insert(module_name.to_string(), None);
                 println!("Info: {} not found in source code！", module_name);
