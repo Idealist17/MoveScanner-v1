@@ -6,7 +6,7 @@ use crate::{
     },
     scanner::option::Options,
 };
-use move_binary_format::access::ModuleAccess;
+// use move_binary_format::access::ModuleAccess;
 use petgraph::dot::Dot;
 use std::{fs, io::Write, path::PathBuf};
 pub struct Printer {

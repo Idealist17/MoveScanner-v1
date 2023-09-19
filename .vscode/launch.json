@@ -17,9 +17,17 @@
       },
       // "args": ["-p", "./res/examples_mv/aptos/DemoCoin.mv"],
       // "args": ["-p", "/home/wlq/Project/MoveBit/MoveScanner/res/examples_mv/aptos"],
+      // "args": [
+      //   "-p",
+      //   "/home/wlq/Project/MoveBit/MoveScanner-v1/res/examples_project/recursive_call_demo",
+      //   "-i",
+      //   "cfg",
+      //   "printer"
+      // ],
       "args": [
         "-p",
-        "/home/wlq/Project/MoveBit/MoveScanner-v1/res/examples_project/recursive_call_demo",
+        // "/home/wlq/Project/MoveBit/MoveScanner-v1/res/examples_project/recursive_call_demo",
+        "/home/wlq/Project/MoveBit/MoveScanner-v1/res/examples_project/repeated_call_demo/build/repeated_call_demo/bytecode_modules/repeated_call_demo4.mv"
       ],
       "cwd": "${workspaceFolder}"
     },

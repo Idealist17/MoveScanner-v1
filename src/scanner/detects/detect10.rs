@@ -3,9 +3,13 @@ use crate::{
     move_ir::{generate_bytecode::FunctionInfo, packages::Packages, utils},
     scanner::{detectors::AbstractDetector, result::*},
 };
-use move_model::{model::FunId, symbol::SymbolPool};
+use move_model::{
+    model::{FunId, ModuleId},
+    symbol::SymbolPool,
+    ty::Type,
+};
 use move_stackless_bytecode::{
-    stackless_bytecode::{Bytecode, Operation, AssignKind},
+    stackless_bytecode::{Bytecode, Operation},
     stackless_control_flow_graph::BlockContent,
 };
 
@@ -57,8 +61,10 @@ impl<'a> Detector10<'a> {
         let mut stack = Vec::new();
         // path 作为stack 中压入的区块的历史记录
         let mut path = Vec::new();
-        // func_map 中，key 为 block_id，value 为该代码块中调用的函数id（FunId）
+        // func_map 中，key 为 block_id，value 为该代码块中调用的函数id（FunId）、参数、参数类型、函数所属模块
         let mut func_map = HashMap::new();
+        // var_sets 记录等价的参数值，例如 var_sets=[($0,$1,$2),($3,$4)]，此时说明变量 $0,$1,$2 的值相同，$3,$4 的值相同。
+        let mut var_sets = Vec::new();
         // 代码入口块
         let entry_block_id = cfg.entry_block();
         stack.push(&entry_block_id);
@@ -72,10 +78,9 @@ impl<'a> Detector10<'a> {
             cfg.successors(*block_id)
                 .iter()
                 .for_each(|successor_block_id| {
-
                     // 若 path 中不存在后继块，则将后继块压入 stack 和 path 中
                     // 这是为了避免 while 循环：例如 path=[0,1]，此时 1 的后继块为 0，那就说明有循环，应该跳过循环
-                    if !path.contains(&successor_block_id){
+                    if !path.contains(&successor_block_id) {
                         stack.push(successor_block_id);
                         path.push(successor_block_id);
                     }
@@ -83,42 +88,130 @@ impl<'a> Detector10<'a> {
             match *block_content {
                 // 当前区块为代码块
                 BlockContent::Basic { lower, upper } => {
-                    let mut funids = Vec::new();
-                    // 获取当前代码块调用的所有函数id，将其写入 func_map 中
-                    for (offset, bytecode) in
+                    let mut funcs = Vec::new();
+                    for (_offset, bytecode) in
                         (lower..=upper).zip(&code[(lower as usize)..=(upper as usize)])
                     {
                         match bytecode {
-                            Bytecode::Call(attr_id, dsts, op, srcs, _) => match op {
-                                Operation::Function(mid, funid, tys) => {
-                                    funids.push(funid);
+                            Bytecode::Call(_, dsts, oper, args, _aa) => match oper {
+                                // 获取当前代码块调用的所有函数id、参数、参数类型、所属模块，将其写入 func_map
+                                Operation::Function(mid, funid, targs) => {
+                                    funcs.push((mid, funid, args, targs));
                                 }
+                                // 如果是引用，则记录引用链。
+                                // 例如 a=&b c=&b 则将 (a,b,c) 作为一个 var_set，存入 var_sets 中
+                                // 因为通常调用函数时，不会出现 f(a) f(b) 的情况，而只会有 f(b) f(c) ，因此这么存问题不大
+                                Operation::BorrowLoc
+                                | Operation::BorrowGlobal(..)
+                                | Operation::BorrowField(..)
+                                | Operation::FreezeRef
+                                // | Operation::WriteRef
+                                | Operation::ReadRef => {
+                                    // 当操作符为引用时，args 和 dsts 长度均为 1
+                                    if args.len() == 1 && dsts.len() == 1 {
+                                        let mut flag = false;
+                                        var_sets.iter_mut().for_each(
+                                            |var_set: &mut HashSet<&usize>| {
+                                                if var_set.contains(&args[0]) {
+                                                    var_set.insert(&dsts[0]);
+                                                    flag = true
+                                                }
+                                            },
+                                        );
+                                        if flag {
+                                            continue;
+                                        }
+                                        let mut var_set = HashSet::new();
+                                        var_set.insert(&dsts[0]);
+                                        var_set.insert(&args[0]);
+                                        var_sets.push(var_set);
+                                    } else {
+                                        println!("error：args or dsts len!=1")
+                                    }
+                                }
+
                                 _ => {}
                             },
                             // copy move sstore 均为赋值语句
-                            // Bytecode::Assign(_, dst,src ,askind ) =>{
-
-                            // },
+                            Bytecode::Assign(_, dst, src, _askind) => {
+                                let mut flag = false;
+                                var_sets
+                                    .iter_mut()
+                                    .for_each(|var_set: &mut HashSet<&usize>| {
+                                        // 假设 a=b，var_sets=[(b,c)]，此时说明 b=c，又因为 a=b，因此 a=b=c
+                                        // 将其写入 var_sets 中，即[(a,b,c)]
+                                        if var_set.contains(src) {
+                                            var_set.insert(dst);
+                                            flag = true
+                                        }
+                                    });
+                                // 若没有找到，则新建一个set，假设 a=b var_sets=[(c,d)]
+                                // 则新建：var_sets=[(a,b),(c,d)]
+                                if flag {
+                                    continue;
+                                }
+                                let mut var_set = HashSet::new();
+                                var_set.insert(dst);
+                                var_set.insert(src);
+                                var_sets.push(var_set);
+                            }
                             _ => {}
                         }
                     }
-                    func_map.insert(block_id, funids);
+                    func_map.insert(block_id, funcs);
                     // println!("{:?}", block_content);
                 }
 
                 // 当前代码块为入口块或结束块。（其实写的是结束块的处理逻辑）
                 BlockContent::Dummy => {
                     // 判断 func_map 中是否存在重复的函数id
-                    // seen_funids 中存储已经出现过一次的 funid
-                    let mut seen_funids = HashSet::new();
+                    // seen_funids 中存储已经出现过一次的 funid，及其对应的参数和参数类型
+                    let mut seen_func: HashMap<FunId, (&ModuleId, &Vec<usize>, &Vec<Type>)> =
+                        HashMap::new();
 
                     // 拿出所有的 FunId
-                    for funids in func_map.values() {
-                        for &funid in funids {
-                            if seen_funids.insert(funid) || repeated_funids.contains(funid) {
-                                continue
+                    for funcs in func_map.values() {
+                        for (&ref mid, &funid, &ref args, &ref targs) in funcs {
+                            // 已被记录重复调用，跳过
+                            if repeated_funids.contains(&funid) {
+                                continue;
                             }
-                            repeated_funids.push(*funid);
+                            // 首次出现，记录为已发现
+                            if !seen_func.contains_key(&funid) {
+                                seen_func.insert(funid, (mid, args, targs));
+                                continue;
+                            }
+                            // funid 第二次重复出现，可能是重复调用
+                            let mut find_diff = false;
+
+                            let &(old_mid, old_args, old_targs) = seen_func.get(&funid).unwrap();
+
+                            // 一、判断模块名称是否相同
+                            // 二、判断参数类型是否相同，针对于泛型的方法。
+                            if !mid.eq(old_mid) || !targs.eq(old_targs) {
+                                find_diff = true;
+                            }
+                            // 三、判断所有参数是否相同
+                            for (&old_arg, &arg) in old_args.iter().zip(args.iter()) {
+                                if find_diff {
+                                    break;
+                                }
+                                //TODO: 未考虑 f1(f2()) 的情况，即不先赋值，直接传入函数
+                                for var_set in var_sets.iter() {
+                                    // 每个 var_set 内部的值都认为是相同的
+                                    if (var_set.contains(&old_arg) && !var_set.contains(&arg))
+                                        || (!var_set.contains(&old_arg) && var_set.contains(&arg))
+                                    {
+                                        // 找到一个不同的参数
+                                        find_diff = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            // 若没有发现参数不同；或参数类型不同的情况，则视为重复调用
+                            if !find_diff {
+                                repeated_funids.push(funid);
+                            }
                         }
                     }
 
