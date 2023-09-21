@@ -33,6 +33,12 @@ git pull
 
 **Step 4.** Start a new terminal session, enjoy!
 
+```shell
+cd res/demo
+sui move build
+MoveScanner -p .
+```
+
 ## Usage
 
 ```
@@ -60,29 +66,23 @@ Options:
 **detector is default executor**, so you can omit it when using it.
 
 ```shell
-# MoveScanner -p <bytecode_file_path>
-MoveScanner -p ./res/examples_bytecode/sui/overflow.mv
-
-# MoveScanner -p <bytecode_dir_path>
-# Tips: Normally you should input 'build/.../bytecode_modules'
-MoveScanner -p ./res/examples_bytecode/sui
-
-# MoveScanner -p <package_path>
 # Tips: Make sure the project is compiled
-MoveScanner -p ./res/examples_project/sui_proj
+MoveScanner -p <package_path>
+MoveScanner -p <bytecode_dir_path>
+MoveScanner -p <bytecode_file_path>
 ```
 
 The result is output to `result.json` by default, you can customize the output file name and path by running `-o`：
 
 ```shell
-# filename
-MoveScanner -p "./res/examples_mv/sui" -o my_result.json
-
-# path and filename
-MoveScanner -p "./res/examples_mv/sui" -o /my/path/my_result.json
+MoveScanner -p <path> -o <output_path>
 ```
 
 If you don't want to output results on the command line, use `-n`.
+
+```shell
+MoveScanner -p <path> -n
+```
 
 ### Printer
 
@@ -96,7 +96,8 @@ The printer can output some intermediate representations:
 - `cg`: Function Call Graph
 
 ```shell
-MoveScanner -p "./res/examples_mv/sui" -i sb printer
+# example
+MoveScanner -p <path> -i sb printer
 ```
 
 ## Detector Define

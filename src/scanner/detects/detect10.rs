@@ -155,7 +155,6 @@ impl<'a> Detector10<'a> {
                                                             if let Some(|var)=map.get(&(mid,sid,targs,offset)){
                                                                 // 随便取出一个值，var_set_internal中的内容都是等价的
                                                                 first_field_var =var;
-                                                                // var_set_internal.insert(&dsts[0]);
                                                                 flag=true;
                                                             }
                                                         }

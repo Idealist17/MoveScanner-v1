@@ -1,0 +1,8 @@
+[package]
+name = "demo"
+version = "0.0.1"
+
+[dependencies]
+Sui = { local = "/home/wlq/Project/MoveBit/sui/crates/sui-framework/packages/sui-framework" }
+[addresses]
+demo = "0x0"
