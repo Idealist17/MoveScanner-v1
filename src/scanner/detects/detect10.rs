@@ -65,13 +65,14 @@ impl<'a> Detector10<'a> {
         let mut func_map = HashMap::new();
         // var_sets 记录等价的参数值，例如 var_sets=[($0,$1,$2),($3,$4)]，此时说明变量 $0,$1,$2 的值相同，$3,$4 的值相同。
         let mut var_sets = Vec::new();
-        // 嵌套map，第一层 key 为结构体，第二层 map 的 key 是结构体的字段，value是等价的变量。
+        // 嵌套map，第一层 key 为结构体，第二层 map 的 key 是结构体的字段，value 是首个 borrow_field 的接收变量
         // 例如 $1= borrow_field<structA>.x($0)
         //      $2= borrow_field<structA>.x($0)
-        // 此时 field_map = { $0: { x:[$1,$2] } }
+        //      $3= borrow_field<structA>.y($0)
+        // 此时 field_map = { $0: { x:$1, y:$3 } }
         let mut field_map: HashMap<
             &usize,
-            HashMap<(&ModuleId, &move_model::model::StructId, &Vec<Type>, &usize), HashSet<&usize>>,
+            HashMap<(&ModuleId, &move_model::model::StructId, &Vec<Type>, &usize), &usize>,
         > = HashMap::new();
         // 代码入口块
         let entry_block_id = cfg.entry_block();
@@ -79,6 +80,9 @@ impl<'a> Detector10<'a> {
         path.push(&entry_block_id);
         let mut repeated_funids = Vec::new();
         // dfs 深度遍历
+        if function.name == "demo5_f4" {
+            println!("{:?}", function.name);
+        }
         while !stack.is_empty() {
             // 当前块以访问，从 stack 中弹出，注意，path 并不会弹出
             let block_id = stack.pop().unwrap();
@@ -128,7 +132,6 @@ impl<'a> Detector10<'a> {
                                         if flag {
                                             continue;
                                         }
-
                                         let mut var_set = HashSet::new();
                                         var_set.insert(&dsts[0]);
                                         var_set.insert(&args[0]);
@@ -140,7 +143,7 @@ impl<'a> Detector10<'a> {
                                 // 需要记录 borrow 的是哪个字段
                                 Operation::BorrowField(mid, sid, targs, offset) =>{
                                     // 首先判断 borrow 的结构体是否相同
-                                    let mut same_field_var:&usize = &0;
+                                    let mut first_field_var:&usize = &0;
                                     let mut flag = false;
                                     if args.len() == 1 && dsts.len() == 1 {
                                         // 找到结构体的等价变量列表
@@ -149,10 +152,10 @@ impl<'a> Detector10<'a> {
                                                     var_set.iter().for_each(|&var|{
                                                         // 从 field_map 中找到结构体的字段等价变量，存储于 var_set_internal 中
                                                         if let Some(map) = field_map.get_mut(var){
-                                                            if let Some(var_set_internal)=map.get_mut(&(mid,sid,targs,offset)){
+                                                            if let Some(|var)=map.get(&(mid,sid,targs,offset)){
                                                                 // 随便取出一个值，var_set_internal中的内容都是等价的
-                                                                same_field_var = var_set_internal.iter().next().unwrap();
-                                                                var_set_internal.insert(&dsts[0]);
+                                                                first_field_var =var;
+                                                                // var_set_internal.insert(&dsts[0]);
                                                                 flag=true;
                                                             }
                                                         }
@@ -160,9 +163,9 @@ impl<'a> Detector10<'a> {
                                                 }
                                         });
                                         if flag {
-                                            // 通过 same_field_var，将新的字段等价变量添加到 var_sets 中
+                                            // 通过 first_field_var，将新的字段等价变量添加到 var_sets 中
                                             var_sets.iter_mut().for_each(|var_set: &mut HashSet<&usize>| {
-                                                if var_set.contains(same_field_var) {
+                                                if var_set.contains(first_field_var) {
                                                     // tips：此时找到的 var_set_internal 和 var_set 是相同的
                                                     var_set.insert(&dsts[0]);
                                                     flag = true
@@ -171,10 +174,10 @@ impl<'a> Detector10<'a> {
                                             continue;
                                         }
                                     }
-                                    // 首次 borrow_field 当前 struct。
-                                    let mut var_set_internal =  HashSet::new();
-                                    var_set_internal.insert(&dsts[0]);
-                                    let map = HashMap::from([((mid,sid,targs,offset),var_set_internal)]);
+                                    // 首次 borrow_field 当前 struct
+                                    // $1= borrow_field<structA>.x($0)
+                                    // 此时 dst[0]=$1, arg[0]=$0
+                                    let map = HashMap::from([((mid,sid,targs,offset),&dsts[0])]);
                                     field_map.insert(&args[0], map);
 
                                     let mut var_set = HashSet::new();
@@ -207,6 +210,13 @@ impl<'a> Detector10<'a> {
                                 var_set.insert(src);
                                 var_sets.push(var_set);
                             }
+
+                            // 常量赋值语句
+                            Bytecode::Load(_, dst, _cons) => {
+                                let mut var_set = HashSet::new();
+                                var_set.insert(dst);
+                                var_sets.push(var_set);
+                            }
                             _ => {}
                         }
                     }
@@ -218,7 +228,7 @@ impl<'a> Detector10<'a> {
                 BlockContent::Dummy => {
                     // 判断 func_map 中是否存在重复的函数id
                     // seen_funids 中存储已经出现过一次的 funid，及其对应的参数和参数类型
-                    let mut seen_func: HashMap<FunId, (&ModuleId, &Vec<usize>, &Vec<Type>)> =
+                    let mut seen_func: HashMap<FunId, Vec<(&ModuleId, &Vec<usize>, &Vec<Type>)>> =
                         HashMap::new();
 
                     // 拿出所有的 FunId
@@ -230,40 +240,44 @@ impl<'a> Detector10<'a> {
                             }
                             // 首次出现，记录为已发现
                             if !seen_func.contains_key(&funid) {
-                                seen_func.insert(funid, (mid, args, targs));
+                                seen_func.insert(funid, vec![(mid, args, targs)]);
                                 continue;
                             }
-                            // funid 第二次重复出现，可能是重复调用
-                            let mut find_diff = false;
 
-                            let &(old_mid, old_args, old_targs) = seen_func.get(&funid).unwrap();
-
-                            // 一、判断模块名称是否相同
-                            // 二、判断参数类型是否相同，针对于泛型的方法。
-                            if !mid.eq(old_mid) || !targs.eq(old_targs) {
-                                find_diff = true;
-                            }
-                            // 三、判断所有参数是否相同
-                            for (&old_arg, &arg) in old_args.iter().zip(args.iter()) {
-                                if find_diff {
-                                    break;
+                            for &(old_mid, old_args, old_targs) in
+                                seen_func.get(&funid).unwrap().iter()
+                            {
+                                // funid 重复出现，可能是重复调用
+                                let mut find_diff = false;
+                                // 一、判断模块名称是否相同
+                                // 二、判断参数类型是否相同，针对于泛型的方法。
+                                if !mid.eq(old_mid) || !targs.eq(old_targs) {
+                                    find_diff = true;
                                 }
-                                //TODO: 未考虑 f1(f2()) 的情况，即不先赋值，直接传入函数
-                                for var_set in var_sets.iter() {
-                                    // 每个 var_set 内部的值都认为是相同的
-                                    if (var_set.contains(&old_arg) && !var_set.contains(&arg))
-                                        || (!var_set.contains(&old_arg) && var_set.contains(&arg))
-                                    {
-                                        // 找到一个不同的参数
-                                        find_diff = true;
+                                // 三、判断所有参数是否相同
+                                for (&old_arg, &arg) in old_args.iter().zip(args.iter()) {
+                                    if find_diff {
                                         break;
                                     }
+                                    //TODO: 未考虑 f1(f2()) 的情况，即不先赋值，直接传入函数
+                                    for var_set in var_sets.iter() {
+                                        // 每个 var_set 内部的值都认为是相同的
+                                        if (var_set.contains(&old_arg) && !var_set.contains(&arg))
+                                            || (!var_set.contains(&old_arg)
+                                                && var_set.contains(&arg))
+                                        {
+                                            // 找到一个不同的参数
+                                            find_diff = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                // 若没有发现参数不同；或参数类型不同的情况，则视为重复调用
+                                if !find_diff {
+                                    repeated_funids.push(funid);
                                 }
                             }
-                            // 若没有发现参数不同；或参数类型不同的情况，则视为重复调用
-                            if !find_diff {
-                                repeated_funids.push(funid);
-                            }
+                            seen_func.get_mut(&funid).unwrap().push((mid, args, targs));
                         }
                     }
 
