@@ -1,10 +1,10 @@
-use std::{fs, path::PathBuf};
-
 use move_binary_format::file_format::Visibility;
 use move_model::{
     model::ModuleEnv,
     ty::{self, *},
 };
+use std::{fs, path::PathBuf};
+use walkdir::WalkDir;
 
 // 依赖的 module 的 address
 const DEPADDRESSES: [&str; 2] = ["0x1::", "0x3::"];
@@ -182,4 +182,30 @@ pub fn print_logo() {
 ██║╚██╔╝██║██║   ██║╚██╗ ██╔╝██╔══╝  ╚════██║██║     ██╔══██║██║╚██╗██║██║╚██╗██║██╔══╝  ██╔══██╗
 ██║ ╚═╝ ██║╚██████╔╝ ╚████╔╝ ███████╗███████║╚██████╗██║  ██║██║ ╚████║██║ ╚████║███████╗██║  ██║
 ╚═╝     ╚═╝ ╚═════╝   ╚═══╝  ╚══════╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝"}
+}
+
+pub fn find_path_by_dir_name(path: &PathBuf, dir_name: &str) -> Option<PathBuf> {
+    let mut target_path = None;
+    if path.is_file(){
+        return target_path;
+    }
+    for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
+        if entry.file_type().is_dir() && entry.file_name().to_str().unwrap() == dir_name {
+            target_path = Some(entry.path().to_path_buf());
+        }
+    }
+    target_path
+}
+
+pub fn toml_file_count(path: &PathBuf) -> i32 {
+    let mut count = 0;
+    if path.is_file(){
+        return count;
+    }
+    for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
+        if entry.file_type().is_file() && entry.file_name().to_str().unwrap().ends_with(".toml") {
+            count += 1;
+        }
+    }
+    count
 }

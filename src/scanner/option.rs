@@ -1,7 +1,7 @@
 use crate::cli::parser::{Args, IR};
-use std::fs;
-use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
+use crate::scanner::compile::compile;
+use crate::utils::utils::{find_path_by_dir_name, toml_file_count};
+use std::path::PathBuf;
 // use toml::Value;
 // 终端输出格式
 #[derive(Debug, Clone)]
@@ -23,46 +23,17 @@ pub struct Options {
 impl Options {
     // TODO: 增加从配置文件读入配置
     pub fn build_options(args: Args) -> Self {
-        let path = Path::new(&args.path);
-        // sources 文件夹必须是当前给定目录下的直接子目录
-        let mut sources_path = None;
-        let mut build_path = None;
-        if let Ok(entries) = fs::read_dir(Path::new(path)) {
-            for entry in entries.into_iter().filter_map(|e| e.ok()) {
-                if entry.path().is_dir() {
-                    if entry.file_name() == "sources" {
-                        sources_path = Some(entry.path());
-                        // println!("sources： {}", entry.path().display());
-                    } else if entry.file_name() == "build" {
-                        build_path = Some(entry.path());
-                        // println!("build： {}", entry.path().display());
-                    }
-                }
-            }
+        let path = PathBuf::from(&args.path);
+        // 只允许一个子项目
+        assert!(toml_file_count(&path) < 2, "up to one project is allowed");
+        let sources_path = find_path_by_dir_name(&path, "sources");
+        let mut bytecode_path = Some(path.clone());
+        // 若存在 sources 路径，则编译项目，再找 bytecode 路径
+        // println!("Detected /sources, Try to compile.");
+        if let Some(sources_path) = sources_path.clone() {
+            assert!(compile(&sources_path), "compile project failed");
+            bytecode_path = find_path_by_dir_name(&path, "bytecode_modules");
         }
-        // 如果存在 build 路径，则递归查找 bytecode_modules
-        let mut bytecode_path = PathBuf::new();
-        if let Some(build_path) = build_path {
-            for entry in WalkDir::new(build_path).into_iter().filter_map(|e| e.ok()) {
-                if entry.file_type().is_dir() {
-                    if entry.file_name() == "bytecode_modules" {
-                        bytecode_path = entry.path().to_path_buf();
-                        // println!("bytecode_modules:  {}", entry.path().display());
-                    }
-                }
-            }
-        } else {
-            // 若不存在 build 路径，但存在 sources 路径，则打出提醒，说不定是使用者忘记编译了
-            if sources_path.is_some() {
-                println!("Detected /sources, but not found /build. Please check if the project has been compiled.");
-            }
-            // 若不存在 build 路径，则将传入的路径视作 bytecode_path
-            bytecode_path = path.to_path_buf();
-
-            // 注意：此时即便有 sources 路径，也视为无效
-            sources_path = None;
-        }
-
         let terminal_format: TerminalFormat;
         if args.none {
             terminal_format = TerminalFormat::None;
@@ -71,7 +42,7 @@ impl Options {
         }
         Self {
             sources_path: sources_path,
-            bytecode_path: bytecode_path,
+            bytecode_path: bytecode_path.unwrap(),
             output_path: PathBuf::from(args.output.unwrap()),
             terminal_format: terminal_format,
             ir_type: args.ir_type,

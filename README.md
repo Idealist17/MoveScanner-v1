@@ -35,7 +35,6 @@ git pull
 
 ```shell
 cd res/demo
-sui move build
 MoveScanner -p .
 ```
 
@@ -65,11 +64,17 @@ Options:
 
 **detector is default executor**, so you can omit it when using it.
 
+You can input a complete project, MoveScanner will automatically identify the project type (Aptos/Sui), then compile the project and detect vulnerabilities.
+
 ```shell
-# Tips: Make sure the project is compiled
+# Tips: Make sure your project can be compiled successfully.
 MoveScanner -p <package_path>
-MoveScanner -p <bytecode_dir_path>
+```
+Additionally, you can directly provide bytecode files or a folder containing bytecode files.
+
+```shell
 MoveScanner -p <bytecode_file_path>
+MoveScanner -p <bytecode_dir_path>
 ```
 
 The result is output to `result.json` by default, you can customize the output file name and path by running `-o`：

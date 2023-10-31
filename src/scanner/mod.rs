@@ -3,3 +3,4 @@ pub mod detectors;
 pub mod detects;
 pub mod result;
 pub mod option;
+pub mod compile;
