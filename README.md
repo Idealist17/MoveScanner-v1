@@ -59,7 +59,6 @@ uv run import_to_neo4j.py <PROJECT_PATH> \
 ```bash
 uv run import_to_neo4j.py ./tests/test_project \
     --project-name MyDeFiProtocol \
-
     --neo4j-pass mysecret
 ```
 
@@ -71,7 +70,3 @@ uv run import_to_neo4j.py ./tests/test_project \
     - Invokes the Rust Core.
     - Reads `output_graph.json`.
     - Performs Cypher queries to `MERGE` nodes and relationships into Neo4j.
-
-## License
-
-MIT
