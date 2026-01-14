@@ -3,6 +3,7 @@ import argparse
 import subprocess
 import json
 import logging
+import re
 from neo4j import GraphDatabase
 
 # Configure logging
@@ -60,65 +61,119 @@ def find_bytecode_dir(project_path):
     # Check if user passed a raw bytecode dir
     return project_path
 
-def import_to_neo4j(uri, user, password, graph_data):
+def import_to_neo4j(uri, user, password, project_name, graph_data):
     """Imports graph data into Neo4j."""
     driver = GraphDatabase.driver(uri, auth=(user, password))
     
     def create_nodes_and_edges(tx, data):
-        # 1. Clear database (Optional: use with caution)
-        # tx.run("MATCH (n) DETACH DELETE n") 
+        # 1. Project Namespace handling
+        
+        def to_global_id(local_id):
+            return f"{project_name}:{local_id}"
 
+        # 2. Project Node
+        tx.run("MERGE (p:Project {name: $name})", name=project_name)
+
+        # 3. Analyze Nodes & Edges to finding Ghost Nodes
+        known_ids = set()
+        for node in data.get("nodes", []):
+            known_ids.add(node.get("id"))
+        
+        ghost_node_types = {} # id -> set(types)
+
+        # 3.1 scan edges to find unknown targets
+        for edge in data.get("edges", []):
+            target_id = edge.get("to")
+            if target_id not in known_ids:
+                # Ghost Node detected
+                edge_type = edge.get("type", "RELATED_TO")
+                if target_id not in ghost_node_types:
+                    ghost_node_types[target_id] = set()
+                
+                # Infer type
+                if edge_type == "Calls":
+                    ghost_node_types[target_id].add("Function")
+                elif edge_type in ["Packs", "Unpacks", "Acquires"]:
+                    ghost_node_types[target_id].add("Struct")
+
+        # 4. Create Ghost Nodes
+        logging.info(f"Creating {len(ghost_node_types)} Ghost Nodes...")
+        for gid, types in ghost_node_types.items():
+            global_id = to_global_id(gid)
+            labels = ":External"
+            if "Function" in types:
+                labels += ":Function"
+            if "Struct" in types:
+                labels += ":Struct"
+            
+            # Create Ghost + Link to Project
+            query = f"""
+            MERGE (n{labels} {{id: $id}})
+            ON CREATE SET n.name = $name, n.is_external = true, n.project = $project
+            MERGE (p:Project {{name: $project}})
+            MERGE (p)-[:INCLUDES]->(n)
+            """
+            tx.run(query, id=global_id, name=gid, project=project_name)
+
+        # 5. Process Known Nodes
         def _process_module(tx, node):
-            props = {k: v for k, v in node.items() if k != "type"}
+            global_id = to_global_id(node['id'])
+            props = {k: v for k, v in node.items() if k != "type" and k != "id"}
             query = """
             MERGE (n:Module {id: $id})
-            ON CREATE SET n += $props
+            ON CREATE SET n += $props, n.project = $project
             ON MATCH SET n += $props
+            MERGE (p:Project {name: $project})
+            MERGE (p)-[:INCLUDES]->(n)
             """
-            tx.run(query, id=props['id'], props=props)
+            tx.run(query, id=global_id, props=props, project=project_name)
 
         def _process_struct(tx, node):
-            props = {k: v for k, v in node.items() if k != "type"}
-            # Read 'source' from JSON (mapped from Rust 'source' field)
+            global_id = to_global_id(node['id'])
+            props = {k: v for k, v in node.items() if k != "type" and k != "id"}
+            
+            # Explicit Booleans for abilities
+            abilities = set(props.get("abilities", []))
+            for ability in ["key", "store", "copy", "drop"]:
+                props[f"is_{ability}"] = (ability in abilities)
+            
+            # Source code handlinzg
             source_code = node.get("source", "")
             props['source_code'] = source_code
-            # Remove 'source' key if present to avoid duplication if we want clean props, 
-            # but 'source' came from node which we filtered 'type' out of.
-            # If props has 'source', we can keep it or remove it. 
-            # We explicitly set 'source_code'.
-            if 'source' in props:
-                del props['source']
+            if 'source' in props: del props['source']
 
             query = """
             MERGE (n:Struct {id: $id})
-            ON CREATE SET n += $props
+            ON CREATE SET n += $props, n.project = $project
             ON MATCH SET n += $props
+            MERGE (p:Project {name: $project})
+            MERGE (p)-[:INCLUDES]->(n)
             """
-            tx.run(query, id=props['id'], props=props)
+            tx.run(query, id=global_id, props=props, project=project_name)
 
         def _process_function(tx, node):
-            props = {k: v for k, v in node.items() if k != "type"}
+            global_id = to_global_id(node['id'])
+            props = {k: v for k, v in node.items() if k != "type" and k != "id"}
+            
             source_code = node.get("source", "")
             props['source_code'] = source_code
-            if 'source' in props:
-                del props['source']
+            if 'source' in props: del props['source']
 
-            # Create derived property node_description
+            # Derived description
             name = props.get("name", "")
             module_id = props.get("module_id", "")
-            # "Function " + name + " defined in " + module + ". Code: " + source_code
-            node_description = f"Function {name} defined in {module_id}. Code: {source_code}"
-            props['node_description'] = node_description
+            props['node_description'] = f"Function {name} defined in {module_id}. Code: {source_code}"
 
             query = """
             MERGE (n:Function {id: $id})
-            ON CREATE SET n += $props
+            ON CREATE SET n += $props, n.project = $project
             ON MATCH SET n += $props
+            MERGE (p:Project {name: $project})
+            MERGE (p)-[:INCLUDES]->(n)
             """
-            tx.run(query, id=props['id'], props=props)
+            tx.run(query, id=global_id, props=props, project=project_name)
 
-        # 2. Create Nodes
-        logging.info("Creating Nodes...")
+        logging.info("Creating Internal Nodes...")
         for node in data.get("nodes", []):
             node_type = node.get("type", "Unknown")
             if node_type == "Function":
@@ -128,18 +183,27 @@ def import_to_neo4j(uri, user, password, graph_data):
             elif node_type == "Module":
                 _process_module(tx, node)
             else:
-                # Generic fallback for other types
-                props = {k: v for k, v in node.items() if k != "type"}
-                query = f"MERGE (n:{node_type} {{id: $props.id}}) SET n += $props"
-                tx.run(query, props=props)
+                # Generic
+                global_id = to_global_id(node['id'])
+                props = {k: v for k, v in node.items() if k != "type" and k != "id"}
+                query = f"""
+                MERGE (n:{node_type} {{id: $id}}) 
+                SET n += $props, n.project = $project
+                MERGE (p:Project {{name: $project}})
+                MERGE (p)-[:INCLUDES]->(n)
+                """
+                tx.run(query, id=global_id, props=props, project=project_name)
 
-        # 3. Create Edges
+        # 6. Process Edges
         logging.info("Creating Edges...")
         for edge in data.get("edges", []):
             edge_type = edge.get("type", "RELATED_TO")
-            source_id = edge.get("from")
-            target_id = edge.get("to")
+            source_id = to_global_id(edge.get("from"))
+            target_id = to_global_id(edge.get("to"))
             
+            if not edge.get("from") or not edge.get("to"): continue
+            
+            # Use MERGE for relationship
             query = f"""
             MATCH (a {{id: $source_id}})
             MATCH (b {{id: $target_id}})
@@ -157,6 +221,7 @@ def import_to_neo4j(uri, user, password, graph_data):
 def main():
     parser = argparse.ArgumentParser(description="MoveScanner Automation Script")
     parser.add_argument("project_path", help="Path to the Move project directory")
+    parser.add_argument("--project-name", required=True, help="Unique name for the project (Namespace)")
     parser.add_argument("--scanner-bin", default="./target/debug/MoveScanner", help="Path to MoveScanner binary")
     parser.add_argument("--neo4j-uri", default="bolt://localhost:7687", help="Neo4j URI")
     parser.add_argument("--neo4j-user", default="neo4j", help="Neo4j User")
@@ -164,6 +229,9 @@ def main():
     parser.add_argument("--output-dir", default="./res", help="Output directory for JSON")
     
     args = parser.parse_args()
+    if not re.match(r'^[a-zA-Z0-9_]+$', args.project_name):
+        logging.error("Project name must contain only alphanumeric characters and underscores.")
+        return
 
     # 1. Build Project
     build_move_project(args.project_path)
@@ -197,7 +265,7 @@ def main():
 
     # 5. Import to Neo4j
     try:
-        import_to_neo4j(args.neo4j_uri, args.neo4j_user, args.neo4j_pass, graph_data)
+        import_to_neo4j(args.neo4j_uri, args.neo4j_user, args.neo4j_pass, args.project_name, graph_data)
     except Exception as e:
         logging.error(f"Neo4j Import Failed: {e}")
 
