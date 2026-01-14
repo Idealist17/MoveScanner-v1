@@ -1,7 +1,7 @@
 [project]
-name = "movescanner-v1"
+name = "mv2Neo4j"
 version = "0.1.0"
-description = "Add your description here"
+description = "Parse sui move project to neo4j"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

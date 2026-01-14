@@ -1,10 +1,9 @@
 /target
 /utils
-/data.txt
 /Cargo.lock
-/dots
 .DS_Store
 *.json
 dot
 *.dot
 printer
+/target

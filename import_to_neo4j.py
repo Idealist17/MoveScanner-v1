@@ -222,7 +222,7 @@ def main():
     parser = argparse.ArgumentParser(description="MoveScanner Automation Script")
     parser.add_argument("project_path", help="Path to the Move project directory")
     parser.add_argument("--project-name", required=True, help="Unique name for the project (Namespace)")
-    parser.add_argument("--scanner-bin", default="./target/debug/MoveScanner", help="Path to MoveScanner binary")
+
     parser.add_argument("--neo4j-uri", default="bolt://localhost:7687", help="Neo4j URI")
     parser.add_argument("--neo4j-user", default="neo4j", help="Neo4j User")
     parser.add_argument("--neo4j-pass", default="password", help="Neo4j Password")
@@ -248,10 +248,8 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     
     # Use cargo run or binary
-    if args.scanner_bin.startswith("cargo"):
-        cmd = f"{args.scanner_bin} -- -p {bytecode_path} -s {args.project_path} --skip-build -o {output_json}"
-    else:
-        cmd = f"{args.scanner_bin} -p {bytecode_path} -s {args.project_path} --skip-build -o {output_json}"
+    scanner_bin = "./target/release/MoveScanner"
+    cmd = f"{scanner_bin} -p {bytecode_path} -s {args.project_path} --skip-build -o {output_json}"
         
     run_command(cmd)
 

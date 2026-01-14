@@ -1,7 +1,7 @@
 #![allow(non_snake_case)]
 use MoveScanner::{
     cli::parser::{Cli, SubCommands},
-    scanner::{detectors::Detectors, printer::Printer, option::Options},
+    scanner::{detectors::GraphGenerator, printer::Printer, option::Options},
 };
 use clap::Parser;
 // use env_logger;
@@ -15,11 +15,11 @@ fn main() {
             let mut printer = Printer::new(option);
             printer.run();
         }
-        // 默认 Detector
+        // Default: Graph Generation
         _ => {
-            let mut detector = Detectors::new(option);
-            detector.run();
-            detector.output_result();
+            let mut generator = GraphGenerator::new(option);
+            generator.run();
+            // detector.output_result(); // Removed output.json generation
         }
     }
 }
